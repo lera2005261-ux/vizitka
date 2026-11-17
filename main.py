@@ -75,7 +75,9 @@ def db() -> sqlite3.Connection:
     return conn
 
 def init_db() -> None:
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+    d = os.path.dirname(DB_PATH)
+    if d:
+        os.makedirs(d, exist_ok=True)
     with db() as conn:
         conn.executescript("""
         CREATE TABLE IF NOT EXISTS seats (
