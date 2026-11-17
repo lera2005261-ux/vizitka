@@ -1,372 +1,355 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>Выбор мест</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
-  body { font-family: -apple-system, system-ui, sans-serif; margin: 0; padding: 12px; background: #121212; color: #e0e0e0; -webkit-font-smoothing: antialiased; }
-  h2 { margin: 20px 0 10px; font-size: 15px; color: #888; text-align: center; font-weight: 500; text-transform: uppercase; letter-spacing: 1px; }
-  .stage { text-align: center; background: linear-gradient(180deg, #2a2a2a, #1a1a1a); color: #fff; padding: 8px; border-radius: 8px; margin: 12px 0; letter-spacing: 4px; font-size: 12px; font-weight: bold; border: 1px solid #333; box-shadow: 0 4px 10px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05); }
-  .row { display: flex; align-items: center; margin: 4px 0; gap: 4px; min-width: max-content; }
-  .row-num { width: 24px; font-size: 11px; color: #666; text-align: right; flex-shrink: 0; font-weight: 600; }
-  .row-num.right { text-align: left; }
-  .seat { width: 22px; height: 22px; border-radius: 5px; border: 1px solid rgba(255,255,255,0.1); font-size: 10px; display: flex; align-items: center; justify-content: center; cursor: pointer; user-select: none; flex-shrink: 0; transition: all 0.2s ease; font-weight: 600; color: rgba(255,255,255,0.9); }
-  .seat:active { transform: scale(0.9); }
-  .seat.free { background: #2e7d32; border-color: #4caf50; box-shadow: 0 0 6px rgba(76, 175, 80, 0.4); }
-  .seat.free:hover { box-shadow: 0 0 12px rgba(76, 175, 80, 0.8); background: #388e3c; }
-  .seat.busy { background: #c62828; border-color: #ef5350; box-shadow: 0 0 6px rgba(239, 83, 80, 0.3); cursor: not-allowed; opacity: 0.6; }
-  .seat.mine { background: #1976d2; border-color: #42a5f5; box-shadow: 0 0 8px rgba(66, 165, 245, 0.6); }
-  .seat.selected { outline: 2px solid #ffd54f; outline-offset: 2px; z-index: 10; box-shadow: 0 0 10px rgba(255, 213, 79, 0.8); }
-  .seat.group { cursor: not-allowed; border: 1px solid rgba(255,255,255,0.05); color: #000; font-weight: 800; opacity: 0.9; }
-  
-  /* Точные цвета групп */
-  .g-red { background: #e03131; color: #fff; box-shadow: 0 0 6px rgba(224, 49, 49, 0.4); }       /* ГУП-1 */
-  .g-teal { background: #0ca678; color: #fff; box-shadow: 0 0 6px rgba(12, 166, 120, 0.4); }      /* ГУП-2 */
-  .g-orange { background: #f08c00; color: #fff; box-shadow: 0 0 6px rgba(240, 140, 0, 0.4); }     /* ГУП-3 */
-  .g-blue { background: #1971c2; color: #fff; box-shadow: 0 0 6px rgba(25, 113, 194, 0.4); }      /* ГУП-4 */
-  .g-green { background: #2f9e44; color: #fff; box-shadow: 0 0 6px rgba(47, 158, 68, 0.4); }      /* ГУП-5 */
-  .g-brown { background: #8d5537; color: #fff; box-shadow: 0 0 6px rgba(141, 85, 55, 0.4); }      /* ГУЭ-1 */
-  .g-pink { background: #e64980; color: #fff; box-shadow: 0 0 6px rgba(230, 73, 128, 0.4); }      /* ГУЭ-2 */
-  .g-purple { background: #9c36b5; color: #fff; box-shadow: 0 0 6px rgba(156, 54, 181, 0.4); }    /* УИР-1 */
-  .g-lime { background: #82c91e; box-shadow: 0 0 6px rgba(130, 201, 30, 0.4); }                   /* УИР-2 */
-  .g-gray { background: #495057; color: #fff; box-shadow: 0 0 6px rgba(73, 80, 87, 0.4); }        /* Остальное */
+  :root{
+    --bg:#f4f6f8; --card:#ffffff; --text:#1c2733; --muted:#7b8794;
+    --free:#c6efce; --free-b:#3faf5c; --busy:#ffc7ce; --busy-b:#e05265;
+    --group:#d9d9d9; --group-b:#a9a9a9; --mine:#9ec9ff; --mine-b:#2f7fe0;
+    --accent:#2f7fe0;
+    --seat: clamp(22px, 7vw, 36px);
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+  body{margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+       background:var(--bg); color:var(--text); padding-bottom:92px}
+  header{position:sticky; top:0; z-index:10; background:var(--card);
+         padding:12px 16px; box-shadow:0 1px 4px rgba(0,0,0,.08)}
+  header h1{margin:0; font-size:17px}
+  header p{margin:4px 0 0; font-size:13px; color:var(--muted)}
 
-  .legend { display: flex; flex-wrap: wrap; justify-content: center; gap: 16px; font-size: 12px; margin: 16px 0; color: #aaa; }
-  .dot { width: 14px; height: 14px; border-radius: 4px; display: inline-block; margin-right: 6px; vertical-align: middle; border: 1px solid rgba(255,255,255,0.2); }
-  
-  .form { background: #1e1e1e; padding: 16px; border-radius: 16px; margin-bottom: 20px; box-shadow: 0 8px 24px rgba(0,0,0,0.4); border: 1px solid #333; }
-  .form input { width: 100%; padding: 12px 14px; margin: 8px 0; box-sizing: border-box; background: #2a2a2a; border: 1px solid #444; border-radius: 10px; font-size: 14px; color: #fff; transition: border-color 0.2s; }
-  .form input:focus { outline: none; border-color: #1976d2; background: #2c2c2c; }
-  
-  .btn { width: 100%; padding: 14px; background: linear-gradient(180deg, #1e88e5, #1976d2); color: #fff; border: 1px solid #1565c0; border-radius: 10px; font-size: 15px; margin-top: 10px; cursor: pointer; font-weight: 600; transition: all 0.2s; box-shadow: 0 4px 10px rgba(25, 118, 210, 0.3); }
-  .btn:hover { background: linear-gradient(180deg, #2196f3, #1e88e5); box-shadow: 0 6px 15px rgba(25, 118, 210, 0.5); }
-  .btn:active { transform: translateY(1px); box-shadow: 0 2px 5px rgba(25, 118, 210, 0.3); }
-  .btn.cancel { background: linear-gradient(180deg, #e53935, #c62828); border-color: #b71c1c; box-shadow: 0 4px 10px rgba(198, 40, 40, 0.3); margin-top: 8px; }
-  .btn.cancel:hover { background: linear-gradient(180deg, #f44336, #e53935); box-shadow: 0 6px 15px rgba(198, 40, 40, 0.5); }
-  .btn:disabled { background: #333; color: #666; border-color: #222; cursor: not-allowed; box-shadow: none; transform: none; }
+  .panel{background:var(--card); margin:12px 12px 0; border-radius:12px;
+         padding:14px; box-shadow:0 1px 4px rgba(0,0,0,.06)}
+  .panel h2{margin:0 0 10px; font-size:15px}
+  .field{margin-bottom:10px}
+  .field label{display:block; font-size:12px; color:var(--muted); margin-bottom:4px}
+  .field input{width:100%; padding:10px 12px; font-size:15px; border:1px solid #d6dbe1;
+               border-radius:8px; outline:none; background:#fff; color:var(--text)}
+  .field input:focus{border-color:var(--accent)}
+  .row{display:flex; gap:10px}
+  .row .field{flex:1}
 
-  .msg { padding: 12px; border-radius: 10px; margin: 16px 0; font-size: 13px; display: none; text-align: center; font-weight: 500; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
-  .msg.ok { background: #2e7d32; color: #fff; display: block; border: 1px solid #4caf50;}
-  .msg.err { background: #c62828; color: #fff; display: block; border: 1px solid #ef5350;}
-  
-  .hall-scroll { overflow-x: auto; padding: 10px 0 20px; display: flex; flex-direction: column; align-items: center; -webkit-overflow-scrolling: touch; }
-  .hall-scroll::-webkit-scrollbar { height: 8px; }
-  .hall-scroll::-webkit-scrollbar-track { background: #1a1a1a; border-radius: 4px; }
-  .hall-scroll::-webkit-scrollbar-thumb { background: #444; border-radius: 4px; }
-  .hall-scroll::-webkit-scrollbar-thumb:hover { background: #555; }
+  button.primary{width:100%; padding:12px; font-size:15px; font-weight:600;
+                 border:none; border-radius:10px; background:var(--accent);
+                 color:#fff; cursor:pointer}
+  button.primary:disabled{background:#b9c6d6; cursor:default}
+  button.ghost{margin-top:8px; width:100%; padding:10px; font-size:14px;
+               border:1px solid #d6dbe1; border-radius:10px; background:#fff;
+               color:var(--text); cursor:pointer}
+  button.ghost:disabled{color:#b0b7c0; cursor:default}
+
+  .legend{display:flex; flex-wrap:wrap; gap:10px 16px; margin:12px 12px 0;
+          background:var(--card); border-radius:12px; padding:10px 14px;
+          font-size:12px; color:var(--muted)}
+  .legend span{display:flex; align-items:center; gap:6px; white-space:nowrap}
+  .dot{width:14px; height:14px; border-radius:4px; display:inline-block;
+       border:1.5px solid transparent}
+  .dot.free{background:var(--free); border-color:var(--free-b)}
+  .dot.busy{background:var(--busy); border-color:var(--busy-b)}
+  .dot.mine{background:var(--mine); border-color:var(--mine-b)}
+  .dot.group{background:var(--group); border-color:var(--group-b)}
+
+  .hall-wrap{margin:12px 12px 0; background:var(--card); border-radius:12px;
+             padding:12px 8px 16px; overflow:hidden}
+  .scene{font-size:11px; letter-spacing:3px; text-align:center; color:var(--muted);
+         border-bottom:2px solid #c8d0d9; padding-bottom:8px; margin:0 12px 12px}
+  .hall-scroll{overflow-x:auto; -webkit-overflow-scrolling:touch; padding:4px 2px}
+  .hall{min-width:max-content; margin:0 auto}
+
+  .zone-title{font-size:11px; color:var(--muted); text-align:center;
+              margin:8px 0 4px; letter-spacing:1px}
+  .row-line{display:flex; align-items:center; gap:6px; margin:5px auto; width:max-content}
+  .row-num{width:22px; text-align:right; font-size:11px; color:var(--muted);
+           flex:none; user-select:none}
+  .seat{width:var(--seat); height:var(--seat); border-radius:7px;
+        border:1.5px solid transparent; font-size:9px; line-height:1;
+        display:flex; align-items:center; justify-content:center;
+        user-select:none; transition:transform .08s}
+  .seat.free{background:var(--free); border-color:var(--free-b); cursor:pointer}
+  .seat.busy{background:var(--busy); border-color:var(--busy-b); cursor:not-allowed}
+  .seat.mine{background:var(--mine); border-color:var(--mine-b); cursor:pointer}
+  .seat.group{background:var(--group); border-color:var(--group-b); cursor:not-allowed}
+  .seat.selected{outline:2.5px solid #1c2733; outline-offset:1px}
+  .seat.free:active,.seat.mine:active{transform:scale(.9)}
+
+  .bar{position:fixed; left:0; right:0; bottom:0; z-index:10; background:var(--card);
+       padding:10px 14px calc(10px + env(safe-area-inset-bottom));
+       box-shadow:0 -2px 8px rgba(0,0,0,.08);
+       display:flex; align-items:center; gap:12px}
+  .bar .info{font-size:13px; flex:1; min-width:0}
+  .bar .info b{font-size:15px}
+  .bar button{flex:none; padding:11px 18px; font-size:14px; font-weight:600;
+              border:none; border-radius:10px; background:var(--accent); color:#fff;
+              cursor:pointer}
+  .bar button:disabled{background:#b9c6d6; cursor:default}
+
+  .toast{position:fixed; left:50%; bottom:76px; transform:translateX(-50%);
+         background:#2b3542; color:#fff; padding:10px 16px; border-radius:10px;
+         font-size:13px; z-index:20; max-width:88vw; text-align:center}
+  .scroll-hint{display:none; text-align:center; font-size:11px; color:var(--muted);
+               margin-top:8px}
+  @media (max-width:600px){ .scroll-hint{display:block} }
 </style>
 </head>
 <body>
-<div class="form">
-  <input id="fio" placeholder="ФИО">
-  <input id="course" placeholder="Курс">
-  <input id="grp" placeholder="Группа">
-  <button class="btn" id="save">Сохранить данные</button>
-</div>
 
-<div class="msg" id="msg"></div>
+<header>
+  <h1>Театр — выбор мест</h1>
+  <p id="who">Загрузка…</p>
+</header>
+
+<div class="panel" id="profilePanel">
+  <h2>Профиль</h2>
+  <form id="profileForm">
+    <div class="field"><label>ФИО</label>
+      <input name="fio" required placeholder="Иванов Иван"></div>
+    <div class="row">
+      <div class="field"><label>Курс</label>
+        <input name="course" required placeholder="1"></div>
+      <div class="field"><label>Группа</label>
+        <input name="grp" required placeholder="МТО-101"></div>
+    </div>
+    <button class="primary" type="submit">Сохранить профиль</button>
+  </form>
+</div>
 
 <div class="legend">
-  <span><span class="dot" style="background:#2e7d32; box-shadow:0 0 6px #4caf50"></span>Свободно</span>
-  <span><span class="dot" style="background:#c62828; box-shadow:0 0 6px #ef5350"></span>Занято</span>
-  <span><span class="dot" style="background:#1976d2; box-shadow:0 0 6px #42a5f5"></span>Мои места</span>
+  <span><i class="dot free"></i>свободно</span>
+  <span><i class="dot busy"></i>занято</span>
+  <span><i class="dot mine"></i>ваше</span>
+  <span><i class="dot group"></i>группа / балкон</span>
 </div>
 
-<div class="stage">СЦЕНА</div>
-<div class="hall-scroll" id="parter"></div>
-<h2>Балкон (места групп)</h2>
-<div class="hall-scroll" id="balcony"></div>
+<div class="hall-wrap">
+  <div class="scene">С Ц Е Н А</div>
+  <div class="hall-scroll"><div class="hall" id="hall"></div></div>
+  <div class="scroll-hint">↔ прокрутите вбок, чтобы увидеть весь зал</div>
+</div>
 
-<button class="btn" id="book" disabled>Забронировать</button>
-<button class="btn cancel" id="cancel" disabled>Отменить бронь</button>
+<div class="bar">
+  <div class="info">Выбрано: <b id="selCount">0</b> / <span id="maxSeats">4</span></div>
+  <button id="bookBtn" disabled>Забронировать</button>
+  <button id="cancelBtn" disabled style="background:#e05265">Отменить</button>
+</div>
 
 <script>
-const tg = window.Telegram?.WebApp;
-tg?.ready(); tg?.expand();
-const initData = tg?.initData || "";
-const selected = new Set();
-const key = (s,r,n) => `${s}|${r}|${n}`;
-
-const C_RED = "g-red";
-const C_TEAL = "g-teal";
-const C_ORANGE = "g-orange";
-const C_BLUE = "g-blue";
-const C_GREEN = "g-green";
-const C_BROWN = "g-brown";
-const C_PINK = "g-pink";
-const C_PURPLE = "g-purple";
-const C_LIME = "g-lime";
-const C_GRAY = "g-gray";
-
-function getParterGroupColor(row, seat) {
-    row = parseInt(row);
-    // ГУП-1
-    if ((row === 15 || row === 16) && seat >= 16 && seat <= 30) return C_RED;
-    if (row === 17 && seat === 30) return C_RED;
-    // ГУП-2
-    if (row === 17 && seat >= 16 && seat <= 29) return C_TEAL;
-    if (row === 18 && seat >= 16 && seat <= 30) return C_TEAL;
-    if (row === 19 && seat >= 29 && seat <= 30) return C_TEAL;
-    // ГУП-3
-    if (row === 19 && seat >= 16 && seat <= 28) return C_ORANGE;
-    if (row === 20 && seat >= 16 && seat <= 30) return C_ORANGE;
-    if (row === 21 && seat === 16) return C_ORANGE;
-    // ГУП-4
-    if (row === 21 && seat >= 17 && seat <= 30) return C_BLUE;
-    if (row === 22 && seat >= 16 && seat <= 30) return C_BLUE;
-    if (row === 23 && (seat === 25 || seat === 26)) return C_BLUE;
-    // ГУП-5
-    if (row === 23 && seat >= 5 && seat <= 24) return C_GREEN;
-    // ГУЭ-1
-    if (row === 16 && seat >= 1 && seat <= 15) return C_BROWN;
-    if (row === 17 && seat >= 4 && seat <= 15) return C_BROWN;
-    // ГУЭ-2
-    if (row === 17 && seat >= 1 && seat <= 3) return C_PINK;
-    if (row === 18 && seat >= 1 && seat <= 15) return C_PINK;
-    if (row === 19 && seat >= 6 && seat <= 15) return C_PINK;
-    // УИР-1
-    if (row === 19 && seat >= 1 && seat <= 5) return C_PURPLE;
-    if (row === 20 && seat >= 1 && seat <= 15) return C_PURPLE;
-    if (row === 21 && seat >= 9 && seat <= 15) return C_PURPLE;
-    // УИР-2
-    if (row === 21 && seat >= 1 && seat <= 8) return C_LIME;
-    if (row === 22 && seat >= 1 && seat <= 15) return C_LIME;
-    if (row === 23 && seat >= 1 && seat <= 4) return C_LIME;
-    return C_GRAY;
+const tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
+if (tg) {
+  tg.ready();
+  tg.expand();
 }
 
-function getBalconyColor(row, seat) {
-    row = parseInt(row);
-    // Ряд 1
-    if (row === 1) {
-        if (seat >= 8 && seat <= 10) return C_RED;      // ГУП-1
-        if (seat >= 6 && seat <= 7) return C_TEAL;      // ГУП-2
-        if (seat >= 1 && seat <= 3) return C_BROWN;     // ГУЭ-1
-        if (seat >= 4 && seat <= 5) return C_PINK;      // ГУЭ-2
-    }
-    // Ряд 2
-    if (row === 2) {
-        if (seat === 30) return C_TEAL;                 // ГУП-2
-        if (seat >= 12 && seat <= 25) return C_GREEN;   // ГУП-5
-        if (seat >= 9 && seat <= 11) return C_ORANGE;   // ГУП-3
-        if (seat >= 7 && seat <= 8) return C_BLUE;      // ГУП-4
-        if (seat >= 5 && seat <= 6) return C_PINK;      // ГУЭ-2
-        if (seat >= 1 && seat <= 3) return C_PURPLE;    // УИР-1
-        if (seat === 4) return C_LIME;                  // УИР-2
-    }
-    // Ряд 3
-    if (row === 3) {
-        if (seat === 5) return C_BLUE;                  // ГУП-4
-        if (seat >= 3 && seat <= 4) return C_LIME;      // УИР-2
-    }
-    return C_GRAY;
+const authHeaders = {
+  "X-Telegram-Init-Data": (tg && tg.initData) ? tg.initData : ""
+};
+
+let state = null;      // {seats, max_seats, user_id, test_mode}
+let selected = new Set();   // ключи "section|row|seat" выбранных свободных
+let mineSelected = new Set(); // ключи ваших мест для отмены
+
+const $ = s => document.querySelector(s);
+const keyOf = s => s.section + "|" + s.row + "|" + s.seat;
+
+function toast(msg){
+  const t = document.createElement("div");
+  t.className = "toast";
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 3000);
 }
 
-function headers() { return initData ? {"X-Telegram-Init-Data": initData} : {}; }
-
-async function loadProfile() {
-  const r = await fetch("/api/profile", {headers: headers()});
-  if (!r.ok) return;
-  const p = await r.json();
-  if (p.fio) document.getElementById("fio").value = p.fio;
-  if (p.course) document.getElementById("course").value = p.course;
-  if (p.grp) document.getElementById("grp").value = p.grp;
-}
-
-async function saveProfile() {
-  const fio = document.getElementById("fio").value.trim();
-  const course = document.getElementById("course").value.trim();
-  const grp = document.getElementById("grp").value.trim();
-  if (!fio || !course || !grp) { showMsg("Заполните ФИО, курс и группу", "err"); return; }
-  const r = await fetch("/api/profile", {
-    method: "POST",
-    headers: {"Content-Type": "application/json", ...headers()},
-    body: JSON.stringify({fio, course, grp})
+async function api(path, options = {}){
+  const res = await fetch(path, {
+    ...options,
+    headers: { ...authHeaders, ...(options.headers || {}) }
   });
-  if (r.ok) showMsg("Данные сохранены", "ok");
-  else showMsg("Ошибка сохранения", "err");
-}
-
-function showMsg(text, kind) {
-  const m = document.getElementById("msg");
-  m.textContent = text;
-  m.className = "msg " + kind;
-  setTimeout(() => m.className = "msg", 4000);
-}
-
-function updateButtons() {
-  let hasFree = false, hasMine = false;
-  for (const kk of selected) {
-      const el = document.querySelector(`.seat[data-key="${kk}"]`);
-      if (el) {
-          if (el.classList.contains("mine")) hasMine = true;
-          if (el.classList.contains("free")) hasFree = true;
-      }
+  if (!res.ok){
+    let msg = "Ошибка " + res.status;
+    try { msg = (await res.json()).detail || msg; } catch(e){}
+    throw new Error(msg);
   }
-  document.getElementById("book").disabled = !hasFree;
-  document.getElementById("cancel").disabled = !hasMine;
+  return res.json();
 }
 
-function render(seats) {
-  const parter = document.getElementById("parter");
-  const balcony = document.getElementById("balcony");
-  parter.innerHTML = ""; balcony.innerHTML = "";
-  
-  const byRow = {};
-  for (const s of seats) {
-    const k = `${s.section}|${s.row}`;
-    (byRow[k] ||= []).push(s);
+function renderWho(){
+  const el = $("#who");
+  if (!state){ el.textContent = "Не удалось загрузить данные"; return; }
+  if (state.test_mode){
+    el.textContent = "Тестовый режим — без Telegram-авторизации";
+  } else if (state.user_id){
+    el.textContent = "Вы вошли: id " + state.user_id;
+  } else {
+    el.textContent = "Откройте через кнопку в боте";
   }
-  
-  const sortedKeys = Object.keys(byRow).sort((a,b) => {
-      const [secA, rowA] = a.split("|"); const [secB, rowB] = b.split("|");
-      if (secA !== secB) return secA === "parter" ? -1 : 1;
-      return +rowA - +rowB;
-  });
+}
 
-  for (const k of sortedKeys) {
-    const [section, row] = k.split("|");
-    const isBalcony = section === "balcony";
-    const container = isBalcony ? balcony : parter;
-    
-    const rowDiv = document.createElement("div");
-    rowDiv.className = "row";
-    
-    const rn = document.createElement("div");
-    rn.className = "row-num"; rn.textContent = row;
-    rowDiv.appendChild(rn);
+function renderProfile(p){
+  const f = $("#profileForm");
+  if (p && p.fio){
+    f.fio.value = p.fio; f.course.value = p.course; f.grp.value = p.grp;
+  }
+}
 
-    const sortedSeats = byRow[k].sort((a,b)=>b.seat-a.seat);
-    
-    for (const s of sortedSeats) {
-      const el = document.createElement("div");
-      el.className = "seat " + s.status;
-      
-      if (s.status === "group") {
-          if (section === "parter") el.classList.add(getParterGroupColor(row, s.seat));
-          else el.classList.add(getBalconyColor(row, s.seat));
-      }
+function zoneTitle(text){
+  const d = document.createElement("div");
+  d.className = "zone-title";
+  d.textContent = text;
+  return d;
+}
 
-      el.textContent = s.seat;
-      el.dataset.key = key(s.section, s.row, s.seat);
-      
-      if (selected.has(el.dataset.key)) el.classList.add("selected");
+function renderHall(){
+  const hall = $("#hall");
+  hall.innerHTML = "";
+  if (!state) return;
 
-      if (s.status === "free" || s.status === "mine") {
-        el.onclick = () => {
-          const kk = el.dataset.key;
-          if (selected.has(kk)) { selected.delete(kk); el.classList.remove("selected"); }
-          else { selected.add(kk); el.classList.add("selected"); }
-          updateButtons();
-        };
-      } else {
-        el.style.pointerEvents = "none";
-      }
-      rowDiv.appendChild(el);
+  const byKey = {};
+  for (const s of state.seats) byKey[keyOf(s)] = s;
+
+  const zones = [
+    ["Партер — гостевые ряды", s => s.section === "parter" && (s.status === "free" || s.status === "busy" || s.status === "mine")],
+    ["Партер — ряды групп",    s => s.section === "parter" && s.status === "group"],
+    ["Балкон",                 s => s.section === "balcony"]
+  ];
+
+  // Сгруппировать по (зона, ряд), чтобы вывести ряды по порядку
+  const rows = {};
+  for (const s of state.seats){
+    const zi = zones.findIndex(([, fn]) => fn(s));
+    const rk = zi + "|" + s.section + "|" + s.row;
+    (rows[rk] = rows[rk] || {zone: zi, row: s.row, seats: []}).seats.push(s);
+  }
+
+  const order = Object.values(rows).sort((a, b) => a.zone - b.zone || Number(a.row) - Number(b.row));
+
+  let lastZone = -1;
+  for (const r of order){
+    if (r.zone !== lastZone){
+      hall.appendChild(zoneTitle(zones[r.zone][0]));
+      lastZone = r.zone;
     }
-    
-    const rnRight = document.createElement("div");
-    rnRight.className = "row-num right"; rnRight.textContent = row;
-    rowDiv.appendChild(rnRight);
-
-    container.appendChild(rowDiv);
+    const line = document.createElement("div");
+    line.className = "row-line";
+    const num = document.createElement("div");
+    num.className = "row-num";
+    num.textContent = r.row;
+    line.appendChild(num);
+    for (const s of r.seats){
+      const d = document.createElement("div");
+      d.className = "seat " + s.status;
+      d.textContent = s.seat;
+      d.title = "Ряд " + s.row + ", место " + s.seat;
+      const k = keyOf(s);
+      if (selected.has(k) || mineSelected.has(k)) d.classList.add("selected");
+      if (s.status === "free" || s.status === "mine"){
+        d.addEventListener("click", () => toggleSeat(s));
+      }
+      line.appendChild(d);
+    }
+    hall.appendChild(line);
   }
-  updateButtons();
+
+  $("#selCount").textContent = selected.size;
+  $("#maxSeats").textContent = state.max_seats;
+  $("#bookBtn").disabled = selected.size === 0;
+  $("#cancelBtn").disabled = mineSelected.size === 0;
 }
 
-async function loadState() {
-  const r = await fetch("/api/state", {headers: headers()});
-  const data = await r.json();
-  const available = new Set(data.seats.filter(s => s.status === "free" || s.status === "mine").map(s => key(s.section, s.row, s.seat)));
-  for (const kk of Array.from(selected)) { if (!available.has(kk)) selected.delete(kk); }
-  render(data.seats);
+function toggleSeat(s){
+  const k = keyOf(s);
+  if (s.status === "free"){
+    if (selected.has(k)) selected.delete(k);
+    else {
+      if (selected.size >= state.max_seats){
+        toast("Не больше " + state.max_seats + " мест за раз");
+        return;
+      }
+      selected.add(k);
+    }
+  } else if (s.status === "mine"){
+    if (mineSelected.has(k)) mineSelected.delete(k);
+    else mineSelected.add(k);
+  }
+  renderHall();
 }
 
-async function book() {
-  if (selected.size === 0) return;
-  const groups = {};
-  for (const kk of selected) {
-    const [section,row,seat] = kk.split("|");
-    const gk = section + "|" + row;
-    (groups[gk] ||= []).push(+seat);
+async function loadState(){
+  try {
+    state = await api("/api/state");
+    selected.clear();
+    mineSelected.clear();
+    renderWho();
+    renderHall();
+  } catch(e){
+    toast("Не удалось загрузить схему: " + e.message);
   }
-  
-  document.getElementById("book").disabled = true;
-  document.getElementById("book").textContent = "Бронируем...";
+}
 
-  for (const gk of Object.keys(groups)) {
-    const [section,row] = gk.split("|");
-    const r = await fetch("/api/book", {
+async function loadProfile(){
+  try {
+    const p = await api("/api/profile");
+    renderProfile(p);
+  } catch(e){ /* не авторизован — просто пустая форма */ }
+}
+
+$("#profileForm").addEventListener("submit", async ev => {
+  ev.preventDefault();
+  const f = ev.target;
+  try {
+    await api("/api/profile", {
       method: "POST",
-      headers: {"Content-Type": "application/json", ...headers()},
-      body: JSON.stringify({section, row, seats: groups[gk]})
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({fio: f.fio.value, course: f.course.value, grp: f.grp.value})
     });
-    if (!r.ok) {
-      const err = await r.json().catch(()=>({detail:"Ошибка"}));
-      showMsg(err.detail || "Ошибка брони", "err");
-      document.getElementById("book").textContent = "Забронировать";
-      document.getElementById("book").disabled = false;
-      return;
-    }
+    toast("Профиль сохранён");
+  } catch(e){
+    toast("Ошибка: " + e.message);
   }
-  
-  showMsg("Забронировано!", "ok");
-  selected.clear();
-  await loadState();
-  document.getElementById("book").textContent = "Забронировать";
-}
+});
 
-async function cancel() {
-  if (selected.size === 0) return;
-  const mySeats = [];
-  for (const kk of selected) {
-      const parts = kk.split("|");
-      const el = document.querySelector(`.seat[data-key="${kk}"]`);
-      if (el && el.classList.contains("mine")) mySeats.push(parts);
+$("#bookBtn").addEventListener("click", async () => {
+  if (!selected.size) return;
+  const first = [...selected][0].split("|");
+  const seats = [...selected].map(k => Number(k.split("|")[2]));
+  const body = {section: first[0], row: first[1], seats};
+  try {
+    await api("/api/book", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(body)
+    });
+    toast("Забронировано мест: " + seats.length);
+    await loadState();
+  } catch(e){
+    toast("Ошибка: " + e.message);
+    await loadState();
   }
-  
-  if (mySeats.length === 0) { showMsg("Выбранные места вам не принадлежат", "err"); return; }
+});
 
-  const groups = {};
-  for (const [section,row,seat] of mySeats) {
-    const gk = section + "|" + row;
-    (groups[gk] ||= []).push(+seat);
-  }
-
-  document.getElementById("cancel").disabled = true;
-  document.getElementById("cancel").textContent = "Отмена...";
-
-  for (const gk of Object.keys(groups)) {
-    const [section,row] = gk.split("|");
-    const r = await fetch("/api/book", {
+$("#cancelBtn").addEventListener("click", async () => {
+  if (!mineSelected.size) return;
+  const first = [...mineSelected][0].split("|");
+  const seats = [...mineSelected].map(k => Number(k.split("|")[2]));
+  const body = {section: first[0], row: first[1], seats};
+  try {
+    await api("/api/book", {
       method: "DELETE",
-      headers: {"Content-Type": "application/json", ...headers()},
-      body: JSON.stringify({section, row, seats: groups[gk]})
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(body)
     });
-    if (!r.ok) {
-      const err = await r.json().catch(()=>({detail:"Ошибка"}));
-      showMsg(err.detail || "Ошибка отмены", "err");
-      document.getElementById("cancel").textContent = "Отменить бронь";
-      document.getElementById("cancel").disabled = false;
-      return;
-    }
+    toast("Отменено мест: " + seats.length);
+    await loadState();
+  } catch(e){
+    toast("Ошибка: " + e.message);
+    await loadState();
   }
-  
-  showMsg("Бронь отменена", "ok");
-  selected.clear();
-  await loadState();
-  document.getElementById("cancel").textContent = "Отменить бронь";
-}
-
-document.getElementById("save").onclick = saveProfile;
-document.getElementById("book").onclick = book;
-document.getElementById("cancel").onclick = cancel;
+});
 
 loadProfile();
 loadState();
-setInterval(loadState, 10000);
+setInterval(loadState, 30000); // автообновление занятости каждые 30 секунд
 </script>
 </body>
 </html>
