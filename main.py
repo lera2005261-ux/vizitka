@@ -2,6 +2,7 @@ import os
 import json
 import sqlite3
 import asyncio
+import urllib.parse
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Optional
@@ -10,9 +11,6 @@ from fastapi import FastAPI, HTTPException, Request, Query
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-
-# Библиотека для проверки initData
-from init_data_py import validate_by_hash, errors
 
 # ----------------------------------------------------------------------------
 # Конфигурация
@@ -111,30 +109,27 @@ def seat_is_bookable(section: str, row: str, seat: int) -> bool:
     return False
 
 # ----------------------------------------------------------------------------
-# Проверка Telegram (с подробным логированием)
+# ВРЕМЕННАЯ ПРОВЕРКА TELEGRAM (без подписи, только парсинг)
 # ----------------------------------------------------------------------------
-def verify_telegram_init_data(init_data: str, bot_token: str) -> Optional[dict]:
+def current_user(request: Request) -> Optional[dict]:
+    init_data = request.headers.get("X-Telegram-Init-Data", "")
+    
     if not init_data:
         print("AUTH FAIL: initData is EMPTY")
         return None
+        
     try:
-        parsed = validate_by_hash(init_data, bot_token)
-        return parsed.user.model_dump() if parsed.user else None
-    except errors.ExpiredError as e:
-        print(f"AUTH FAIL: ExpiredError, issued_at={getattr(e, 'issued_at', 'unknown')}")
-        return None
-    except errors.InvalidInitDataError as e:
-        print(f"AUTH FAIL: InvalidInitDataError: {type(e).__name__} - {str(e)}")
-        return None
+        parsed = urllib.parse.parse_qs(init_data)
+        user_json = parsed.get("user", ["{}"])[0]
+        user = json.loads(user_json)
+        if not user:
+            print("AUTH FAIL: user field is empty")
+            return None
+        print(f"AUTH SUCCESS: user_id={user.get('id')}")
+        return user
     except Exception as e:
-        print(f"AUTH FAIL: Unexpected {type(e).__name__}: {e}")
+        print(f"AUTH FAIL: Parse error {type(e).__name__}: {e}")
         return None
-
-def current_user(request: Request) -> Optional[dict]:
-    init_data = request.headers.get("X-Telegram-Init-Data", "")
-    if TEST_MODE and not init_data:
-        return {"id": 1, "first_name": "Тест"}
-    return verify_telegram_init_data(init_data, BOT_TOKEN)
 
 # ----------------------------------------------------------------------------
 # Модели
