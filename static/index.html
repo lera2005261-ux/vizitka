@@ -2,17 +2,17 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Выбор мест</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
   body { font-family: -apple-system, system-ui, sans-serif; margin: 0; padding: 12px; background: #121212; color: #e0e0e0; -webkit-font-smoothing: antialiased; }
   h2 { margin: 20px 0 10px; font-size: 15px; color: #888; text-align: center; font-weight: 500; text-transform: uppercase; letter-spacing: 1px; }
   .stage { text-align: center; background: linear-gradient(180deg, #2a2a2a, #1a1a1a); color: #fff; padding: 8px; border-radius: 8px; margin: 12px 0; letter-spacing: 4px; font-size: 12px; font-weight: bold; border: 1px solid #333; box-shadow: 0 4px 10px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05); }
-  .row { display: flex; align-items: center; margin: 4px auto; gap: 4px; width: max-content; }
+  .row { display: flex; align-items: center; margin: 4px 0; gap: 4px; width: max-content; }
   .row-num { width: 24px; font-size: 11px; color: #666; text-align: right; flex-shrink: 0; font-weight: 600; }
   .row-num.right { text-align: left; }
-  .seat { width: clamp(18px, 5.5vw, 22px); height: clamp(18px, 5.5vw, 22px); border-radius: 5px; border: 1px solid rgba(255,255,255,0.1); font-size: 10px; display: flex; align-items: center; justify-content: center; cursor: pointer; user-select: none; flex-shrink: 0; transition: all 0.2s ease; font-weight: 600; color: rgba(255,255,255,0.9); }
+  .seat { width: 22px; height: 22px; border-radius: 5px; border: 1px solid rgba(255,255,255,0.1); font-size: 10px; display: flex; align-items: center; justify-content: center; cursor: pointer; user-select: none; flex-shrink: 0; transition: all 0.2s ease; font-weight: 600; color: rgba(255,255,255,0.9); }
   .seat:active { transform: scale(0.9); }
   .seat.free { background: #2e7d32; border-color: #4caf50; box-shadow: 0 0 6px rgba(76, 175, 80, 0.4); }
   .seat.free:hover { box-shadow: 0 0 12px rgba(76, 175, 80, 0.8); background: #388e3c; }
@@ -51,21 +51,12 @@
   .msg.ok { background: #2e7d32; color: #fff; display: block; border: 1px solid #4caf50;}
   .msg.err { background: #c62828; color: #fff; display: block; border: 1px solid #ef5350;}
   
-  .hall-scroll {
-    overflow-x: auto; overflow-y: hidden;
-    padding: 10px 0 20px;
-    -webkit-overflow-scrolling: touch;
-    overscroll-behavior-x: contain;
-    scrollbar-width: thin;
-    scrollbar-color: #444 #1a1a1a;
-  }
-  .hall-scroll::-webkit-scrollbar { height: 6px; }
-  .hall-scroll::-webkit-scrollbar-track { background: #1a1a1a; border-radius: 3px; }
-  .hall-scroll::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
+  .hall-scroll { overflow-x: auto; padding: 10px 0 20px; -webkit-overflow-scrolling: touch; }
+  .hall-scroll::-webkit-scrollbar { height: 8px; }
+  .hall-scroll::-webkit-scrollbar-track { background: #1a1a1a; border-radius: 4px; }
+  .hall-scroll::-webkit-scrollbar-thumb { background: #444; border-radius: 4px; }
   .hall-scroll::-webkit-scrollbar-thumb:hover { background: #555; }
-
-  .scroll-hint { display: none; text-align: center; font-size: 11px; color: #666; margin: 2px 0 0; }
-  @media (max-width: 860px) { .scroll-hint { display: block; } }
+  .hall { width: max-content; margin: 0 auto; }
 </style>
 </head>
 <body>
@@ -85,7 +76,6 @@
 </div>
 
 <div class="stage">СЦЕНА</div>
-<div class="scroll-hint">↔ прокрутите вбок, чтобы увидеть весь ряд</div>
 <div class="hall-scroll" id="parter"></div>
 <h2>Балкон (места групп)</h2>
 <div class="hall-scroll" id="balcony"></div>
@@ -237,10 +227,16 @@ function render(seats) {
       return +rowA - +rowB;
   });
 
+  const halls = {};
   for (const k of sortedKeys) {
     const [section, row] = k.split("|");
     const isBalcony = section === "balcony";
     const container = isBalcony ? balcony : parter;
+    
+    // Все ряды складываем в одну обёртку .hall — она центрируется,
+    // а скролл-контейнер прокручивает её целиком в обе стороны
+    const hall = (halls[section] ||= document.createElement("div"));
+    hall.className = "hall";
     
     const rowDiv = document.createElement("div");
     rowDiv.className = "row";
@@ -282,8 +278,11 @@ function render(seats) {
     rnRight.className = "row-num right"; rnRight.textContent = row;
     rowDiv.appendChild(rnRight);
 
-    container.appendChild(rowDiv);
+    hall.appendChild(rowDiv);
   }
+  
+  parter.appendChild(halls["parter"]);
+  balcony.appendChild(halls["balcony"]);
   updateButtons();
 }
 
