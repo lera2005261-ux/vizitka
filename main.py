@@ -2,8 +2,6 @@ import os
 import json
 import sqlite3
 import asyncio
-import hashlib
-import hmac
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Optional
@@ -12,6 +10,9 @@ from fastapi import FastAPI, HTTPException, Request, Query
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+
+# Новая библиотека для проверки initData
+from init_data_py import validate_by_hash, errors
 
 # ----------------------------------------------------------------------------
 # Конфигурация
@@ -26,7 +27,7 @@ DB_PATH = os.getenv("DB_PATH", "seats.db")
 TEST_MODE = not BOT_TOKEN
 
 # ----------------------------------------------------------------------------
-# Схема зала (Цельная, без выступов и разрывов)
+# Схема зала
 # ----------------------------------------------------------------------------
 PARTER_ROWS = {
     "1":  list(range(21, 0, -1)),
@@ -76,6 +77,7 @@ def db() -> sqlite3.Connection:
     return conn
 
 def init_db() -> None:
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     with db() as conn:
         conn.executescript("""
         CREATE TABLE IF NOT EXISTS seats (
@@ -109,24 +111,19 @@ def seat_is_bookable(section: str, row: str, seat: int) -> bool:
     return False
 
 # ----------------------------------------------------------------------------
-# Telegram initData
+# Проверка Telegram (через библиотеку)
 # ----------------------------------------------------------------------------
 def verify_telegram_init_data(init_data: str, bot_token: str) -> Optional[dict]:
     if not init_data:
         return None
     try:
-        pairs = [kv.split("=", 1) for kv in init_data.split("&") if "=" in kv]
-        data = {k: v for k, v in pairs}
-        received_hash = data.pop("hash", None)
-        if not received_hash:
-            return None
-        check_string = "\n".join(f"{k}={data[k]}" for k in sorted(data))
-        secret_key = hmac.new(b"WebAppData", bot_token.encode(), hashlib.sha256).digest()
-        calc_hash = hmac.new(secret_key, check_string.encode(), hashlib.sha256).hexdigest()
-        if calc_hash != received_hash:
-            return None
-        user = json.loads(data.get("user", "{}"))
-        return user or None
+        # Библиотека сама проверяет хеш и возвращает объект
+        parsed = validate_by_hash(init_data, bot_token)
+        return parsed.user.model_dump() if parsed.user else None
+    except errors.InvalidInitDataError:
+        return None
+    except errors.ExpiredError:
+        return None
     except Exception:
         return None
 
