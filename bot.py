@@ -17,7 +17,7 @@ async def export(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Нет доступа")
         return
     from export_excel import build_xlsx
-    from server import PARTER_ROWS, GROUP_ROWS_PARTER, BALCONY_ROWS
+from main import PARTER_ROWS, GROUP_ROWS_PARTER, BALCONY_ROWS
     buf = build_xlsx(PARTER_ROWS, GROUP_ROWS_PARTER, BALCONY_ROWS)
     await update.message.reply_document(document=buf, filename="seats.xlsx")
 
