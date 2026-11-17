@@ -11,7 +11,7 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-# Новая библиотека для проверки initData
+# Библиотека для проверки initData
 from init_data_py import validate_by_hash, errors
 
 # ----------------------------------------------------------------------------
@@ -111,20 +111,23 @@ def seat_is_bookable(section: str, row: str, seat: int) -> bool:
     return False
 
 # ----------------------------------------------------------------------------
-# Проверка Telegram (через библиотеку)
+# Проверка Telegram (с подробным логированием)
 # ----------------------------------------------------------------------------
 def verify_telegram_init_data(init_data: str, bot_token: str) -> Optional[dict]:
     if not init_data:
+        print("AUTH FAIL: initData is EMPTY")
         return None
     try:
-        # Библиотека сама проверяет хеш и возвращает объект
         parsed = validate_by_hash(init_data, bot_token)
         return parsed.user.model_dump() if parsed.user else None
-    except errors.InvalidInitDataError:
+    except errors.ExpiredError as e:
+        print(f"AUTH FAIL: ExpiredError, issued_at={getattr(e, 'issued_at', 'unknown')}")
         return None
-    except errors.ExpiredError:
+    except errors.InvalidInitDataError as e:
+        print(f"AUTH FAIL: InvalidInitDataError: {type(e).__name__} - {str(e)}")
         return None
-    except Exception:
+    except Exception as e:
+        print(f"AUTH FAIL: Unexpected {type(e).__name__}: {e}")
         return None
 
 def current_user(request: Request) -> Optional[dict]:
