@@ -7,6 +7,8 @@
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
   body { font-family: -apple-system, system-ui, sans-serif; margin: 0; padding: 12px; background: #121212; color: #e0e0e0; -webkit-font-smoothing: antialiased; }
+  /* ОКНО ПРИЛОЖЕНИЯ: на широких экранах контент не растягивается, а держится в центре шириной 460px */
+  .app { max-width: 460px; margin: 0 auto; }
   h2 { margin: 20px 0 10px; font-size: 15px; color: #888; text-align: center; font-weight: 500; text-transform: uppercase; letter-spacing: 1px; }
   .stage { text-align: center; background: linear-gradient(180deg, #2a2a2a, #1a1a1a); color: #fff; padding: 8px; border-radius: 8px; margin: 12px 0; letter-spacing: 4px; font-size: 12px; font-weight: bold; border: 1px solid #333; box-shadow: 0 4px 10px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05); }
   .row { display: flex; align-items: center; margin: 4px 0; gap: 4px; min-width: max-content; }
@@ -51,14 +53,18 @@
   .msg.ok { background: #2e7d32; color: #fff; display: block; border: 1px solid #4caf50;}
   .msg.err { background: #c62828; color: #fff; display: block; border: 1px solid #ef5350;}
   
-  .hall-scroll { overflow-x: auto; padding: 10px 0 20px; display: flex; flex-direction: column; align-items: center; -webkit-overflow-scrolling: touch; }
+  .hall-scroll { overflow-x: auto; padding: 10px 0 20px; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; }
   .hall-scroll::-webkit-scrollbar { height: 8px; }
   .hall-scroll::-webkit-scrollbar-track { background: #1a1a1a; border-radius: 4px; }
   .hall-scroll::-webkit-scrollbar-thumb { background: #444; border-radius: 4px; }
   .hall-scroll::-webkit-scrollbar-thumb:hover { background: #555; }
+  /* Ряды центрируются внутри контейнера 460px; когда ряд шире — работает скролл в обе стороны */
+  .hall { width: max-content; margin: 0 auto; }
 </style>
 </head>
 <body>
+<div class="app">
+
 <div class="form">
   <input id="fio" placeholder="ФИО">
   <input id="course" placeholder="Курс">
@@ -81,6 +87,8 @@
 
 <button class="btn" id="book" disabled>Забронировать</button>
 <button class="btn cancel" id="cancel" disabled>Отменить бронь</button>
+
+</div>
 
 <script>
 const tg = window.Telegram?.WebApp;
