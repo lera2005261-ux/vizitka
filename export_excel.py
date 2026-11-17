@@ -8,7 +8,9 @@ GREEN = PatternFill("solid", fgColor="C6EFCE")
 RED   = PatternFill("solid", fgColor="FFC7CE")
 GRAY  = PatternFill("solid", fgColor="D9D9D9")
 
+# Тот же путь, что и в main.py — читаем из переменной окружения
 DB_PATH = os.getenv("DB_PATH", "seats.db")
+
 
 def build_xlsx(PARTER_ROWS, GROUP_ROWS_PARTER, BALCONY_ROWS) -> io.BytesIO:
     conn = sqlite3.connect(DB_PATH)
