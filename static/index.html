@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>Выбор мест</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
@@ -12,7 +12,8 @@
   .row { display: flex; align-items: center; margin: 4px 0; gap: 4px; min-width: max-content; }
   .row-num { width: 24px; font-size: 11px; color: #666; text-align: right; flex-shrink: 0; font-weight: 600; }
   .row-num.right { text-align: left; }
-  .seat { width: 22px; height: 22px; border-radius: 5px; border: 1px solid rgba(255,255,255,0.1); font-size: 10px; display: flex; align-items: center; justify-content: center; cursor: pointer; user-select: none; flex-shrink: 0; transition: all 0.2s ease; font-weight: 600; color: rgba(255,255,255,0.9); }
+  /* ИЗМЕНЕНО: размер места теперь адаптивный — на узких экранах чуть меньше, на больших не растёт больше 22px */
+  .seat { width: clamp(18px, 5.5vw, 22px); height: clamp(18px, 5.5vw, 22px); border-radius: 5px; border: 1px solid rgba(255,255,255,0.1); font-size: 10px; display: flex; align-items: center; justify-content: center; cursor: pointer; user-select: none; flex-shrink: 0; transition: all 0.2s ease; font-weight: 600; color: rgba(255,255,255,0.9); }
   .seat:active { transform: scale(0.9); }
   .seat.free { background: #2e7d32; border-color: #4caf50; box-shadow: 0 0 6px rgba(76, 175, 80, 0.4); }
   .seat.free:hover { box-shadow: 0 0 12px rgba(76, 175, 80, 0.8); background: #388e3c; }
@@ -51,11 +52,25 @@
   .msg.ok { background: #2e7d32; color: #fff; display: block; border: 1px solid #4caf50;}
   .msg.err { background: #c62828; color: #fff; display: block; border: 1px solid #ef5350;}
   
-  .hall-scroll { overflow-x: auto; padding: 10px 0 20px; display: flex; flex-direction: column; align-items: center; -webkit-overflow-scrolling: touch; }
-  .hall-scroll::-webkit-scrollbar { height: 8px; }
-  .hall-scroll::-webkit-scrollbar-track { background: #1a1a1a; border-radius: 4px; }
-  .hall-scroll::-webkit-scrollbar-thumb { background: #444; border-radius: 4px; }
+  /* ИЗМЕНЕНО: скролл зала — плавная инерционная прокрутка, боковой свайп не уводит страницу,
+     тонкий скроллбар, ряды выровнены по центру когда влезают и прокручиваются когда нет */
+  .hall-scroll {
+    overflow-x: auto; overflow-y: hidden;
+    padding: 10px 0 20px;
+    display: flex; flex-direction: column; align-items: center;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+    scrollbar-color: #444 #1a1a1a;
+  }
+  .hall-scroll::-webkit-scrollbar { height: 6px; }
+  .hall-scroll::-webkit-scrollbar-track { background: #1a1a1a; border-radius: 3px; }
+  .hall-scroll::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
   .hall-scroll::-webkit-scrollbar-thumb:hover { background: #555; }
+
+  /* ИЗМЕНЕНО: подсказка о прокрутке видна только на узких экранах, где ряд не влезает */
+  .scroll-hint { display: none; text-align: center; font-size: 11px; color: #666; margin: 2px 0 10px; }
+  @media (max-width: 860px) { .scroll-hint { display: block; } }
 </style>
 </head>
 <body>
@@ -75,6 +90,7 @@
 </div>
 
 <div class="stage">СЦЕНА</div>
+<div class="scroll-hint">↔ прокрутите вбок, чтобы увидеть весь ряд</div>
 <div class="hall-scroll" id="parter"></div>
 <h2>Балкон (места групп)</h2>
 <div class="hall-scroll" id="balcony"></div>
