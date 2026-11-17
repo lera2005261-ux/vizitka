@@ -1,4 +1,5 @@
-﻿import io
+import io
+import os
 import sqlite3
 from openpyxl import Workbook
 from openpyxl.styles import PatternFill, Font
@@ -7,8 +8,10 @@ GREEN = PatternFill("solid", fgColor="C6EFCE")
 RED   = PatternFill("solid", fgColor="FFC7CE")
 GRAY  = PatternFill("solid", fgColor="D9D9D9")
 
+DB_PATH = os.getenv("DB_PATH", "seats.db")
+
 def build_xlsx(PARTER_ROWS, GROUP_ROWS_PARTER, BALCONY_ROWS) -> io.BytesIO:
-    conn = sqlite3.connect("seats.db")
+    conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     booked = {(r["section"], r["row"], r["seat"]): r
               for r in conn.execute("SELECT * FROM seats")}
