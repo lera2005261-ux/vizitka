@@ -1,0 +1,372 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Выбор мест</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  body { font-family: -apple-system, system-ui, sans-serif; margin: 0; padding: 12px; background: #121212; color: #e0e0e0; -webkit-font-smoothing: antialiased; }
+  h2 { margin: 20px 0 10px; font-size: 15px; color: #888; text-align: center; font-weight: 500; text-transform: uppercase; letter-spacing: 1px; }
+  .stage { text-align: center; background: linear-gradient(180deg, #2a2a2a, #1a1a1a); color: #fff; padding: 8px; border-radius: 8px; margin: 12px 0; letter-spacing: 4px; font-size: 12px; font-weight: bold; border: 1px solid #333; box-shadow: 0 4px 10px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05); }
+  .row { display: flex; align-items: center; margin: 4px 0; gap: 4px; min-width: max-content; }
+  .row-num { width: 24px; font-size: 11px; color: #666; text-align: right; flex-shrink: 0; font-weight: 600; }
+  .row-num.right { text-align: left; }
+  .seat { width: 22px; height: 22px; border-radius: 5px; border: 1px solid rgba(255,255,255,0.1); font-size: 10px; display: flex; align-items: center; justify-content: center; cursor: pointer; user-select: none; flex-shrink: 0; transition: all 0.2s ease; font-weight: 600; color: rgba(255,255,255,0.9); }
+  .seat:active { transform: scale(0.9); }
+  .seat.free { background: #2e7d32; border-color: #4caf50; box-shadow: 0 0 6px rgba(76, 175, 80, 0.4); }
+  .seat.free:hover { box-shadow: 0 0 12px rgba(76, 175, 80, 0.8); background: #388e3c; }
+  .seat.busy { background: #c62828; border-color: #ef5350; box-shadow: 0 0 6px rgba(239, 83, 80, 0.3); cursor: not-allowed; opacity: 0.6; }
+  .seat.mine { background: #1976d2; border-color: #42a5f5; box-shadow: 0 0 8px rgba(66, 165, 245, 0.6); }
+  .seat.selected { outline: 2px solid #ffd54f; outline-offset: 2px; z-index: 10; box-shadow: 0 0 10px rgba(255, 213, 79, 0.8); }
+  .seat.group { cursor: not-allowed; border: 1px solid rgba(255,255,255,0.05); color: #000; font-weight: 800; opacity: 0.9; }
+  
+  /* Точные цвета групп */
+  .g-red { background: #e03131; color: #fff; box-shadow: 0 0 6px rgba(224, 49, 49, 0.4); }       /* ГУП-1 */
+  .g-teal { background: #0ca678; color: #fff; box-shadow: 0 0 6px rgba(12, 166, 120, 0.4); }      /* ГУП-2 */
+  .g-orange { background: #f08c00; color: #fff; box-shadow: 0 0 6px rgba(240, 140, 0, 0.4); }     /* ГУП-3 */
+  .g-blue { background: #1971c2; color: #fff; box-shadow: 0 0 6px rgba(25, 113, 194, 0.4); }      /* ГУП-4 */
+  .g-green { background: #2f9e44; color: #fff; box-shadow: 0 0 6px rgba(47, 158, 68, 0.4); }      /* ГУП-5 */
+  .g-brown { background: #8d5537; color: #fff; box-shadow: 0 0 6px rgba(141, 85, 55, 0.4); }      /* ГУЭ-1 */
+  .g-pink { background: #e64980; color: #fff; box-shadow: 0 0 6px rgba(230, 73, 128, 0.4); }      /* ГУЭ-2 */
+  .g-purple { background: #9c36b5; color: #fff; box-shadow: 0 0 6px rgba(156, 54, 181, 0.4); }    /* УИР-1 */
+  .g-lime { background: #82c91e; box-shadow: 0 0 6px rgba(130, 201, 30, 0.4); }                   /* УИР-2 */
+  .g-gray { background: #495057; color: #fff; box-shadow: 0 0 6px rgba(73, 80, 87, 0.4); }        /* Остальное */
+
+  .legend { display: flex; flex-wrap: wrap; justify-content: center; gap: 16px; font-size: 12px; margin: 16px 0; color: #aaa; }
+  .dot { width: 14px; height: 14px; border-radius: 4px; display: inline-block; margin-right: 6px; vertical-align: middle; border: 1px solid rgba(255,255,255,0.2); }
+  
+  .form { background: #1e1e1e; padding: 16px; border-radius: 16px; margin-bottom: 20px; box-shadow: 0 8px 24px rgba(0,0,0,0.4); border: 1px solid #333; }
+  .form input { width: 100%; padding: 12px 14px; margin: 8px 0; box-sizing: border-box; background: #2a2a2a; border: 1px solid #444; border-radius: 10px; font-size: 14px; color: #fff; transition: border-color 0.2s; }
+  .form input:focus { outline: none; border-color: #1976d2; background: #2c2c2c; }
+  
+  .btn { width: 100%; padding: 14px; background: linear-gradient(180deg, #1e88e5, #1976d2); color: #fff; border: 1px solid #1565c0; border-radius: 10px; font-size: 15px; margin-top: 10px; cursor: pointer; font-weight: 600; transition: all 0.2s; box-shadow: 0 4px 10px rgba(25, 118, 210, 0.3); }
+  .btn:hover { background: linear-gradient(180deg, #2196f3, #1e88e5); box-shadow: 0 6px 15px rgba(25, 118, 210, 0.5); }
+  .btn:active { transform: translateY(1px); box-shadow: 0 2px 5px rgba(25, 118, 210, 0.3); }
+  .btn.cancel { background: linear-gradient(180deg, #e53935, #c62828); border-color: #b71c1c; box-shadow: 0 4px 10px rgba(198, 40, 40, 0.3); margin-top: 8px; }
+  .btn.cancel:hover { background: linear-gradient(180deg, #f44336, #e53935); box-shadow: 0 6px 15px rgba(198, 40, 40, 0.5); }
+  .btn:disabled { background: #333; color: #666; border-color: #222; cursor: not-allowed; box-shadow: none; transform: none; }
+
+  .msg { padding: 12px; border-radius: 10px; margin: 16px 0; font-size: 13px; display: none; text-align: center; font-weight: 500; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+  .msg.ok { background: #2e7d32; color: #fff; display: block; border: 1px solid #4caf50;}
+  .msg.err { background: #c62828; color: #fff; display: block; border: 1px solid #ef5350;}
+  
+  .hall-scroll { overflow-x: auto; padding: 10px 0 20px; display: flex; flex-direction: column; align-items: center; -webkit-overflow-scrolling: touch; }
+  .hall-scroll::-webkit-scrollbar { height: 8px; }
+  .hall-scroll::-webkit-scrollbar-track { background: #1a1a1a; border-radius: 4px; }
+  .hall-scroll::-webkit-scrollbar-thumb { background: #444; border-radius: 4px; }
+  .hall-scroll::-webkit-scrollbar-thumb:hover { background: #555; }
+</style>
+</head>
+<body>
+<div class="form">
+  <input id="fio" placeholder="ФИО">
+  <input id="course" placeholder="Курс">
+  <input id="grp" placeholder="Группа">
+  <button class="btn" id="save">Сохранить данные</button>
+</div>
+
+<div class="msg" id="msg"></div>
+
+<div class="legend">
+  <span><span class="dot" style="background:#2e7d32; box-shadow:0 0 6px #4caf50"></span>Свободно</span>
+  <span><span class="dot" style="background:#c62828; box-shadow:0 0 6px #ef5350"></span>Занято</span>
+  <span><span class="dot" style="background:#1976d2; box-shadow:0 0 6px #42a5f5"></span>Мои места</span>
+</div>
+
+<div class="stage">СЦЕНА</div>
+<div class="hall-scroll" id="parter"></div>
+<h2>Балкон (места групп)</h2>
+<div class="hall-scroll" id="balcony"></div>
+
+<button class="btn" id="book" disabled>Забронировать</button>
+<button class="btn cancel" id="cancel" disabled>Отменить бронь</button>
+
+<script>
+const tg = window.Telegram?.WebApp;
+tg?.ready(); tg?.expand();
+const initData = tg?.initData || "";
+const selected = new Set();
+const key = (s,r,n) => `${s}|${r}|${n}`;
+
+const C_RED = "g-red";
+const C_TEAL = "g-teal";
+const C_ORANGE = "g-orange";
+const C_BLUE = "g-blue";
+const C_GREEN = "g-green";
+const C_BROWN = "g-brown";
+const C_PINK = "g-pink";
+const C_PURPLE = "g-purple";
+const C_LIME = "g-lime";
+const C_GRAY = "g-gray";
+
+function getParterGroupColor(row, seat) {
+    row = parseInt(row);
+    // ГУП-1
+    if ((row === 15 || row === 16) && seat >= 16 && seat <= 30) return C_RED;
+    if (row === 17 && seat === 30) return C_RED;
+    // ГУП-2
+    if (row === 17 && seat >= 16 && seat <= 29) return C_TEAL;
+    if (row === 18 && seat >= 16 && seat <= 30) return C_TEAL;
+    if (row === 19 && seat >= 29 && seat <= 30) return C_TEAL;
+    // ГУП-3
+    if (row === 19 && seat >= 16 && seat <= 28) return C_ORANGE;
+    if (row === 20 && seat >= 16 && seat <= 30) return C_ORANGE;
+    if (row === 21 && seat === 16) return C_ORANGE;
+    // ГУП-4
+    if (row === 21 && seat >= 17 && seat <= 30) return C_BLUE;
+    if (row === 22 && seat >= 16 && seat <= 30) return C_BLUE;
+    if (row === 23 && (seat === 25 || seat === 26)) return C_BLUE;
+    // ГУП-5
+    if (row === 23 && seat >= 5 && seat <= 24) return C_GREEN;
+    // ГУЭ-1
+    if (row === 16 && seat >= 1 && seat <= 15) return C_BROWN;
+    if (row === 17 && seat >= 4 && seat <= 15) return C_BROWN;
+    // ГУЭ-2
+    if (row === 17 && seat >= 1 && seat <= 3) return C_PINK;
+    if (row === 18 && seat >= 1 && seat <= 15) return C_PINK;
+    if (row === 19 && seat >= 6 && seat <= 15) return C_PINK;
+    // УИР-1
+    if (row === 19 && seat >= 1 && seat <= 5) return C_PURPLE;
+    if (row === 20 && seat >= 1 && seat <= 15) return C_PURPLE;
+    if (row === 21 && seat >= 9 && seat <= 15) return C_PURPLE;
+    // УИР-2
+    if (row === 21 && seat >= 1 && seat <= 8) return C_LIME;
+    if (row === 22 && seat >= 1 && seat <= 15) return C_LIME;
+    if (row === 23 && seat >= 1 && seat <= 4) return C_LIME;
+    return C_GRAY;
+}
+
+function getBalconyColor(row, seat) {
+    row = parseInt(row);
+    // Ряд 1
+    if (row === 1) {
+        if (seat >= 8 && seat <= 10) return C_RED;      // ГУП-1
+        if (seat >= 6 && seat <= 7) return C_TEAL;      // ГУП-2
+        if (seat >= 1 && seat <= 3) return C_BROWN;     // ГУЭ-1
+        if (seat >= 4 && seat <= 5) return C_PINK;      // ГУЭ-2
+    }
+    // Ряд 2
+    if (row === 2) {
+        if (seat === 30) return C_TEAL;                 // ГУП-2
+        if (seat >= 12 && seat <= 25) return C_GREEN;   // ГУП-5
+        if (seat >= 9 && seat <= 11) return C_ORANGE;   // ГУП-3
+        if (seat >= 7 && seat <= 8) return C_BLUE;      // ГУП-4
+        if (seat >= 5 && seat <= 6) return C_PINK;      // ГУЭ-2
+        if (seat >= 1 && seat <= 3) return C_PURPLE;    // УИР-1
+        if (seat === 4) return C_LIME;                  // УИР-2
+    }
+    // Ряд 3
+    if (row === 3) {
+        if (seat === 5) return C_BLUE;                  // ГУП-4
+        if (seat >= 3 && seat <= 4) return C_LIME;      // УИР-2
+    }
+    return C_GRAY;
+}
+
+function headers() { return initData ? {"X-Telegram-Init-Data": initData} : {}; }
+
+async function loadProfile() {
+  const r = await fetch("/api/profile", {headers: headers()});
+  if (!r.ok) return;
+  const p = await r.json();
+  if (p.fio) document.getElementById("fio").value = p.fio;
+  if (p.course) document.getElementById("course").value = p.course;
+  if (p.grp) document.getElementById("grp").value = p.grp;
+}
+
+async function saveProfile() {
+  const fio = document.getElementById("fio").value.trim();
+  const course = document.getElementById("course").value.trim();
+  const grp = document.getElementById("grp").value.trim();
+  if (!fio || !course || !grp) { showMsg("Заполните ФИО, курс и группу", "err"); return; }
+  const r = await fetch("/api/profile", {
+    method: "POST",
+    headers: {"Content-Type": "application/json", ...headers()},
+    body: JSON.stringify({fio, course, grp})
+  });
+  if (r.ok) showMsg("Данные сохранены", "ok");
+  else showMsg("Ошибка сохранения", "err");
+}
+
+function showMsg(text, kind) {
+  const m = document.getElementById("msg");
+  m.textContent = text;
+  m.className = "msg " + kind;
+  setTimeout(() => m.className = "msg", 4000);
+}
+
+function updateButtons() {
+  let hasFree = false, hasMine = false;
+  for (const kk of selected) {
+      const el = document.querySelector(`.seat[data-key="${kk}"]`);
+      if (el) {
+          if (el.classList.contains("mine")) hasMine = true;
+          if (el.classList.contains("free")) hasFree = true;
+      }
+  }
+  document.getElementById("book").disabled = !hasFree;
+  document.getElementById("cancel").disabled = !hasMine;
+}
+
+function render(seats) {
+  const parter = document.getElementById("parter");
+  const balcony = document.getElementById("balcony");
+  parter.innerHTML = ""; balcony.innerHTML = "";
+  
+  const byRow = {};
+  for (const s of seats) {
+    const k = `${s.section}|${s.row}`;
+    (byRow[k] ||= []).push(s);
+  }
+  
+  const sortedKeys = Object.keys(byRow).sort((a,b) => {
+      const [secA, rowA] = a.split("|"); const [secB, rowB] = b.split("|");
+      if (secA !== secB) return secA === "parter" ? -1 : 1;
+      return +rowA - +rowB;
+  });
+
+  for (const k of sortedKeys) {
+    const [section, row] = k.split("|");
+    const isBalcony = section === "balcony";
+    const container = isBalcony ? balcony : parter;
+    
+    const rowDiv = document.createElement("div");
+    rowDiv.className = "row";
+    
+    const rn = document.createElement("div");
+    rn.className = "row-num"; rn.textContent = row;
+    rowDiv.appendChild(rn);
+
+    const sortedSeats = byRow[k].sort((a,b)=>b.seat-a.seat);
+    
+    for (const s of sortedSeats) {
+      const el = document.createElement("div");
+      el.className = "seat " + s.status;
+      
+      if (s.status === "group") {
+          if (section === "parter") el.classList.add(getParterGroupColor(row, s.seat));
+          else el.classList.add(getBalconyColor(row, s.seat));
+      }
+
+      el.textContent = s.seat;
+      el.dataset.key = key(s.section, s.row, s.seat);
+      
+      if (selected.has(el.dataset.key)) el.classList.add("selected");
+
+      if (s.status === "free" || s.status === "mine") {
+        el.onclick = () => {
+          const kk = el.dataset.key;
+          if (selected.has(kk)) { selected.delete(kk); el.classList.remove("selected"); }
+          else { selected.add(kk); el.classList.add("selected"); }
+          updateButtons();
+        };
+      } else {
+        el.style.pointerEvents = "none";
+      }
+      rowDiv.appendChild(el);
+    }
+    
+    const rnRight = document.createElement("div");
+    rnRight.className = "row-num right"; rnRight.textContent = row;
+    rowDiv.appendChild(rnRight);
+
+    container.appendChild(rowDiv);
+  }
+  updateButtons();
+}
+
+async function loadState() {
+  const r = await fetch("/api/state", {headers: headers()});
+  const data = await r.json();
+  const available = new Set(data.seats.filter(s => s.status === "free" || s.status === "mine").map(s => key(s.section, s.row, s.seat)));
+  for (const kk of Array.from(selected)) { if (!available.has(kk)) selected.delete(kk); }
+  render(data.seats);
+}
+
+async function book() {
+  if (selected.size === 0) return;
+  const groups = {};
+  for (const kk of selected) {
+    const [section,row,seat] = kk.split("|");
+    const gk = section + "|" + row;
+    (groups[gk] ||= []).push(+seat);
+  }
+  
+  document.getElementById("book").disabled = true;
+  document.getElementById("book").textContent = "Бронируем...";
+
+  for (const gk of Object.keys(groups)) {
+    const [section,row] = gk.split("|");
+    const r = await fetch("/api/book", {
+      method: "POST",
+      headers: {"Content-Type": "application/json", ...headers()},
+      body: JSON.stringify({section, row, seats: groups[gk]})
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(()=>({detail:"Ошибка"}));
+      showMsg(err.detail || "Ошибка брони", "err");
+      document.getElementById("book").textContent = "Забронировать";
+      document.getElementById("book").disabled = false;
+      return;
+    }
+  }
+  
+  showMsg("Забронировано!", "ok");
+  selected.clear();
+  await loadState();
+  document.getElementById("book").textContent = "Забронировать";
+}
+
+async function cancel() {
+  if (selected.size === 0) return;
+  const mySeats = [];
+  for (const kk of selected) {
+      const parts = kk.split("|");
+      const el = document.querySelector(`.seat[data-key="${kk}"]`);
+      if (el && el.classList.contains("mine")) mySeats.push(parts);
+  }
+  
+  if (mySeats.length === 0) { showMsg("Выбранные места вам не принадлежат", "err"); return; }
+
+  const groups = {};
+  for (const [section,row,seat] of mySeats) {
+    const gk = section + "|" + row;
+    (groups[gk] ||= []).push(+seat);
+  }
+
+  document.getElementById("cancel").disabled = true;
+  document.getElementById("cancel").textContent = "Отмена...";
+
+  for (const gk of Object.keys(groups)) {
+    const [section,row] = gk.split("|");
+    const r = await fetch("/api/book", {
+      method: "DELETE",
+      headers: {"Content-Type": "application/json", ...headers()},
+      body: JSON.stringify({section, row, seats: groups[gk]})
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(()=>({detail:"Ошибка"}));
+      showMsg(err.detail || "Ошибка отмены", "err");
+      document.getElementById("cancel").textContent = "Отменить бронь";
+      document.getElementById("cancel").disabled = false;
+      return;
+    }
+  }
+  
+  showMsg("Бронь отменена", "ok");
+  selected.clear();
+  await loadState();
+  document.getElementById("cancel").textContent = "Отменить бронь";
+}
+
+document.getElementById("save").onclick = saveProfile;
+document.getElementById("book").onclick = book;
+document.getElementById("cancel").onclick = cancel;
+
+loadProfile();
+loadState();
+setInterval(loadState, 10000);
+</script>
+</body>
+</html>
