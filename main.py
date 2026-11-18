@@ -30,6 +30,13 @@ VERIFY_INIT = os.getenv("VERIFY_INIT", "1").strip() != "0"
 
 TEST_MODE = not BOT_TOKEN
 
+TICKET_CAPTION = (
+    "🎟 Ряд {row}, место {seat}\n"
+    "Сверка на входе по списку: данные в брони (ФИО, курс, группа) "
+    "должны быть корректными — иначе не пропустят.\n"
+    "Печать по желанию: в масштабе 100% (без «по размеру страницы»)."
+)
+
 # ----------------------------------------------------------------------------
 # Схема зала
 # ----------------------------------------------------------------------------
@@ -175,11 +182,7 @@ async def send_tickets(uid: int, section: str, row: str, seats: list) -> None:
                     chat_id=uid,
                     document=io.BytesIO(data),
                     filename=name,
-                    caption=(
-                        f"🎟 Ряд {row}, место {s}\n"
-                        "Билеты сверяются на входе по списку — сохраните до мероприятия.\n"
-                        "Печать по желанию: в масштабе 100% (без «по размеру страницы»)."
-                    ),
+                    caption=TICKET_CAPTION.format(row=row, seat=s),
                 )
                 # запоминаем сообщение с билетом, чтобы удалить его при отмене брони
                 with db() as conn:
@@ -234,8 +237,9 @@ async def delete_ticket_msgs(uid: int, section: str, row: str, seats: list) -> N
 # ----------------------------------------------------------------------------
 class ProfileIn(BaseModel):
     fio: str
-    course: str
-    grp: str
+    course: str = ""
+    grp: str = ""
+    is_guest: bool = False
 
 class BookIn(BaseModel):
     section: str
@@ -305,12 +309,20 @@ def api_save_profile(request: Request, p: ProfileIn):
     user = current_user(request)
     if not user:
         raise HTTPException(401, "Не авторизован")
+    if not p.fio.strip():
+        raise HTTPException(400, "Укажите ФИО")
+    if p.is_guest:
+        course, grp = "гость", "гость"
+    else:
+        course, grp = p.course.strip(), p.grp.strip()
+        if not course or not grp:
+            raise HTTPException(400, "Заполните курс и группу (или отметьте «Я гость»)")
     with db() as conn:
         conn.execute(
             "INSERT INTO profiles(user_id,fio,course,grp) VALUES(?,?,?,?) "
             "ON CONFLICT(user_id) DO UPDATE SET fio=excluded.fio,"
             "course=excluded.course,grp=excluded.grp",
-            (user["id"], p.fio.strip(), p.course.strip(), p.grp.strip()),
+            (user["id"], p.fio.strip(), course, grp),
         )
     return {"ok": True}
 
