@@ -1,5 +1,9 @@
 import os
+import io
 import json
+import hmac
+import hashlib
+import time
 import sqlite3
 import asyncio
 import urllib.parse
@@ -7,7 +11,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, Request, Query
+from fastapi import FastAPI, HTTPException, Request, Query, BackgroundTasks
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -21,6 +25,8 @@ ADMIN_KEY = os.getenv("ADMIN_KEY", "change-me").strip()
 ADMIN_IDS = {int(x) for x in os.getenv("ADMIN_IDS", "").replace(" ", "").split(",") if x}
 MAX_SEATS = int(os.getenv("MAX_SEATS", "4"))
 DB_PATH = os.getenv("DB_PATH", "seats.db")
+# Проверка подписи Telegram. Для отладки можно временно поставить VERIFY_INIT=0
+VERIFY_INIT = os.getenv("VERIFY_INIT", "1").strip() != "0"
 
 TEST_MODE = not BOT_TOKEN
 
@@ -111,20 +117,32 @@ def seat_is_bookable(section: str, row: str, seat: int) -> bool:
     return False
 
 # ----------------------------------------------------------------------------
-# ВРЕМЕННАЯ ПРОВЕРКА TELEGRAM (без подписи, только парсинг)
+# Проверка пользователя Telegram (с проверкой подписи initData)
 # ----------------------------------------------------------------------------
 def current_user(request: Request) -> Optional[dict]:
     init_data = request.headers.get("X-Telegram-Init-Data", "")
-    
+
     if not init_data:
         print("AUTH FAIL: initData is EMPTY")
         return None
-        
+
     try:
-        parsed = urllib.parse.parse_qs(init_data)
-        user_json = parsed.get("user", ["{}"])[0]
-        user = json.loads(user_json)
-        if not user:
+        pairs = dict(urllib.parse.parse_qsl(init_data, keep_blank_values=True))
+
+        if VERIFY_INIT and BOT_TOKEN:
+            got_hash = pairs.pop("hash", "")
+            check = "\n".join(f"{k}={v}" for k, v in sorted(pairs.items()))
+            secret = hmac.new(b"WebAppData", BOT_TOKEN.encode(), hashlib.sha256).digest()
+            expected = hmac.new(secret, check.encode(), hashlib.sha256).hexdigest()
+            if not hmac.compare_digest(expected, got_hash):
+                print("AUTH FAIL: bad signature (проверьте, что BOT_TOKEN от того же бота)")
+                return None
+            if time.time() - int(pairs.get("auth_date", "0")) > 86400:
+                print("AUTH FAIL: initData is older than 24h")
+                return None
+
+        user = json.loads(pairs.get("user", "{}"))
+        if not user or "id" not in user:
             print("AUTH FAIL: user field is empty")
             return None
         print(f"AUTH SUCCESS: user_id={user.get('id')}")
@@ -132,6 +150,26 @@ def current_user(request: Request) -> Optional[dict]:
     except Exception as e:
         print(f"AUTH FAIL: Parse error {type(e).__name__}: {e}")
         return None
+
+# ----------------------------------------------------------------------------
+# Отправка билетов в Telegram
+# ----------------------------------------------------------------------------
+async def send_tickets(uid: int, row: str, seats: list) -> None:
+    try:
+        from telegram import Bot
+        from ticket import make_ticket
+        async with Bot(BOT_TOKEN) as bot:
+            for s in sorted(seats):
+                data, name = await asyncio.to_thread(make_ticket, row, s)
+                await bot.send_document(
+                    chat_id=uid,
+                    document=io.BytesIO(data),
+                    filename=name,
+                    caption=f"🎟 Ряд {row}, место {s}\nПечатайте в масштабе 100% (без «по размеру страницы»).",
+                )
+    except Exception as e:
+        # бронь уже сохранена; билеты можно получить командой /tickets
+        print(f"TICKET SEND FAIL: {type(e).__name__}: {e}")
 
 # ----------------------------------------------------------------------------
 # Модели
@@ -219,7 +257,7 @@ def api_save_profile(request: Request, p: ProfileIn):
     return {"ok": True}
 
 @app.post("/api/book")
-def api_book(request: Request, b: BookIn):
+def api_book(request: Request, b: BookIn, background: BackgroundTasks):
     user = current_user(request)
     if not user:
         raise HTTPException(401, "Не авторизован")
@@ -264,6 +302,10 @@ def api_book(request: Request, b: BookIn):
 
     if taken:
         raise HTTPException(409, f"Уже заняты: {', '.join(map(str, taken))}")
+
+    # бронь сохранена -> отправляем билеты (по одному файлу на место)
+    if BOT_TOKEN:
+        background.add_task(send_tickets, uid, b.row, list(b.seats))
     return {"ok": True}
 
 @app.delete("/api/book")
