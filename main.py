@@ -50,12 +50,12 @@ PARTER_ROWS = {
     "3":  list(range(23, 0, -1)),
     "4":  list(range(24, 0, -1)),
     "5":  list(range(25, 0, -1)),
-    "6":  list(range(29, 0, -1)),
-    "7":  list(range(29, 0, -1)),
-    "8":  list(range(29, 0, -1)),
-    "9":  list(range(29, 0, -1)),
-    "10": list(range(29, 0, -1)),
-    "11": list(range(29, 0, -1)),
+    "6":  list(range(28, 0, -1)),   # места 29 не существует — схема исправлена
+    "7":  list(range(28, 0, -1)),
+    "8":  list(range(28, 0, -1)),
+    "9":  list(range(28, 0, -1)),
+    "10": list(range(28, 0, -1)),
+    "11": list(range(28, 0, -1)),
     "12": list(range(26, 0, -1)),   # ряд 12 открыт для бронирования (26 мест)
 }
 
@@ -141,6 +141,62 @@ def seat_is_bookable(section: str, row: str, seat: int) -> bool:
             return False
         return seat in PARTER_ROWS[row]
     return False
+
+# ----------------------------------------------------------------------------
+# Миграция: места 29 в рядах 6–11 не существуют — пересаживаем бронировавших
+# ----------------------------------------------------------------------------
+def _find_free_parter_seat(conn: sqlite3.Connection, orig_row: str, orig_seat: int):
+    """Ищет свободное место: сначала тот же ряд (максимальный номер —
+    ближе к прежнему месту), затем соседние ряды."""
+    rows_order = sorted(PARTER_ROWS.keys(), key=lambda r: abs(int(r) - int(orig_row)))
+    for row in rows_order:
+        for s in PARTER_ROWS[row]:  # списки уже идут от большего к меньшему
+            if row == orig_row and s == orig_seat:
+                continue
+            taken = conn.execute(
+                "SELECT 1 FROM seats WHERE section='parter' AND row=? AND seat=?",
+                (row, s),
+            ).fetchone()
+            if not taken:
+                return row, s
+    return None
+
+
+def migrate_parter_29() -> list:
+    """Пересаживает всех, кто забронировал место 29 в партере рядов 6–11.
+    Возвращает список пересадок для рассылки новых билетов."""
+    moved = []
+    with db() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            rows = conn.execute(
+                "SELECT user_id, section, row, seat, fio, course, grp, ts FROM seats "
+                "WHERE section='parter' AND seat=29 AND row IN (6,7,8,9,10,11)"
+            ).fetchall()
+            for r in rows:
+                spot = _find_free_parter_seat(conn, r["row"], r["seat"])
+                if spot is None:
+                    print(f"SEAT 29 MIGRATION: не нашлось свободного места для "
+                          f"user={r['user_id']} (ряд {r['row']}) — бронь оставлена как есть")
+                    continue
+                new_row, new_seat = spot
+                conn.execute(
+                    "DELETE FROM seats WHERE section='parter' AND row=? AND seat=?",
+                    (r["row"], r["seat"]),
+                )
+                conn.execute(
+                    "INSERT INTO seats(section,row,seat,user_id,fio,course,grp,ts) "
+                    "VALUES(?,?,?,?,?,?,?,?)",
+                    ("parter", new_row, new_seat, r["user_id"], r["fio"],
+                     r["course"], r["grp"], r["ts"]),
+                )
+                moved.append({"user_id": r["user_id"], "old_row": r["row"],
+                              "new_row": new_row, "new_seat": new_seat})
+            conn.execute("COMMIT")
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+    return moved
 
 # ----------------------------------------------------------------------------
 # Проверка пользователя Telegram (с проверкой подписи initData)
@@ -261,6 +317,57 @@ class BookIn(BaseModel):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+
+    # разовая миграция: места 29 в рядах 6–11 не существуют
+    moved = migrate_parter_29()
+    if moved:
+        for m in moved:
+            print(f"SEAT 29 MIGRATED: user={m['user_id']} "
+                  f"ряд {m['old_row']} место 29 -> ряд {m['new_row']} место {m['new_seat']}")
+        if BOT_TOKEN:
+            try:
+                from telegram import Bot
+                async with Bot(BOT_TOKEN) as bot:
+                    for m in moved:
+                        # 1) объяснение: что случилось и что место изменилось
+                        try:
+                            await bot.send_message(
+                                m["user_id"],
+                                "⚠️ Произошла техническая ошибка: место 29 в ряду "
+                                f"{m['old_row']} в зале фактически не существует, "
+                                "и забронировать его было нельзя.\n\n"
+                                f"Вам автоматически выделено другое место: "
+                                f"ряд {m['new_row']}, место {m['new_seat']}.\n"
+                                "Старые билеты недействительны — сейчас пришлём новые. "
+                                "Приносим извинения за неудобства!",
+                            )
+                        except Exception as e:
+                            print(f"MIGRATION NOTICE SKIP user={m['user_id']}: "
+                                  f"{type(e).__name__}: {e}")
+                        # 2) удаляем старые билеты (ряд старый, место 29)
+                        try:
+                            await delete_ticket_msgs(m["user_id"], "parter",
+                                                     m["old_row"], [29])
+                        except Exception as e:
+                            print(f"MIGRATION DELETE FAIL user={m['user_id']}: "
+                                  f"{type(e).__name__}: {e}")
+                        # 3) присылаем новые билеты
+                        await send_tickets(m["user_id"], "parter",
+                                           m["new_row"], [m["new_seat"]])
+                    # отчёт админам
+                    text = "Пересадка несуществующих мест 29 (ряды 6–11):\n" + "\n".join(
+                        f"• user {m['user_id']}: ряд {m['old_row']}, место 29 → "
+                        f"ряд {m['new_row']}, место {m['new_seat']}"
+                        for m in moved
+                    )
+                    for aid in ADMIN_IDS:
+                        try:
+                            await bot.send_message(aid, text)
+                        except Exception as e:
+                            print(f"ADMIN REPORT SKIP {aid}: {type(e).__name__}: {e}")
+            except Exception as e:
+                print(f"MIGRATION NOTIFY FAIL: {type(e).__name__}: {e}")
+
     if BOT_TOKEN:
         from bot import run_bot_async
         app.state.bot_task = asyncio.create_task(run_bot_async(BOT_TOKEN, WEBAPP_URL))
