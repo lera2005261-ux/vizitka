@@ -75,6 +75,92 @@ async def tickets(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             print(f"TICKET MSG SAVE SKIP: {type(e).__name__}: {e}")
 
 
+async def resend(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Админ-команда: удаляет старые балконные билеты и рассылает их заново
+    в новом формате (с плашкой «БАЛКОН») только тем, у кого есть балконная бронь."""
+    print("DEBUG: Команда /resend получена!")
+    admin_ids = {int(x) for x in os.getenv("ADMIN_IDS", "").split(",") if x}
+    if update.effective_user.id not in admin_ids:
+        print(f"DEBUG: Пользователь {update.effective_user.id} не админ. Админы: {admin_ids}")
+        await update.message.reply_text("Нет доступа")
+        return
+
+    from ticket import make_ticket
+    from main import ticket_caption
+    from telegram import Bot
+
+    conn = sqlite3.connect(os.getenv("DB_PATH", "seats.db"))
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute(
+        "SELECT user_id, section, row, seat FROM seats "
+        "WHERE section='balcony' "
+        "ORDER BY user_id, CAST(row AS INTEGER), seat"
+    ).fetchall()
+    conn.close()
+
+    if not rows:
+        await update.message.reply_text("Балконных броней нет — рассылать нечего.")
+        return
+
+    by_user = {}
+    for r in rows:
+        by_user.setdefault(r["user_id"], []).append(r)
+
+    await update.message.reply_text(
+        f"Балконных бронировщиков: {len(by_user)}. "
+        "Удаляю старые балконные билеты и рассылаю новые…"
+    )
+
+    ok_users, fail_users = 0, []
+    async with Bot(os.environ["BOT_TOKEN"]) as bot:
+        for uid, bookings in by_user.items():
+            try:
+                # 1) удаляем старые сообщения с БАЛКОННЫМИ билетами (партерные не трогаем)
+                conn = sqlite3.connect(os.getenv("DB_PATH", "seats.db"))
+                conn.row_factory = sqlite3.Row
+                old = conn.execute(
+                    "SELECT chat_id, message_id FROM ticket_msgs "
+                    "WHERE user_id=? AND section='balcony'",
+                    (uid,)
+                ).fetchall()
+                conn.close()
+                for m in old:
+                    try:
+                        await bot.delete_message(chat_id=m["chat_id"],
+                                                 message_id=m["message_id"])
+                    except Exception as e:
+                        # чаще всего: сообщение старше 48 часов или уже удалено вручную
+                        print(f"OLD DELETE SKIP user={uid}: {type(e).__name__}: {e}")
+
+                # 2) шлём новые балконные билеты с плашкой
+                for r in bookings:
+                    section, row, seat = r["section"], r["row"], r["seat"]
+                    data, name = await asyncio.to_thread(
+                        make_ticket, row, seat, section=section)
+                    msg = await bot.send_document(
+                        chat_id=uid,
+                        document=io.BytesIO(data),
+                        filename=name,
+                        caption=ticket_caption(section, row, seat),
+                    )
+                    try:
+                        _save_ticket_msg(uid, section, row, seat,
+                                         msg.chat_id, msg.message_id)
+                    except Exception as e:
+                        print(f"TICKET MSG SAVE SKIP: {type(e).__name__}: {e}")
+                ok_users += 1
+            except Exception as e:
+                print(f"RESEND FAIL user={uid}: {type(e).__name__}: {e}")
+                fail_users.append(uid)
+
+    report = (f"Готово: новые балконные билеты отправлены "
+              f"{ok_users} пользователю(ям).")
+    if fail_users:
+        report += f"\nНе удалось отправить: {', '.join(map(str, fail_users))} " \
+                  "(бот не может писать тем, кто не начинал с ним чат)."
+    await update.message.reply_text(report)
+
+
 async def export(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     print("DEBUG: Команда /export получена!")
     admin_ids = {int(x) for x in os.getenv("ADMIN_IDS", "").split(",") if x}
@@ -104,6 +190,7 @@ async def run_bot_async(token: str, webapp_url: str):
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("tickets", tickets))
     app.add_handler(CommandHandler("export", export))
+    app.add_handler(CommandHandler("resend", resend))
     async with app:
         await app.start()
         await app.updater.start_polling()
