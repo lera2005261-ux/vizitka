@@ -3,4 +3,5 @@ uvicorn[standard]==0.30.6
 python-telegram-bot==21.6
 openpyxl==3.1.5
 python-multipart==0.0.9
-init-data-py
+Pillow==10.4.0
+
