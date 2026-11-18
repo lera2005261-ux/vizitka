@@ -30,12 +30,16 @@ VERIFY_INIT = os.getenv("VERIFY_INIT", "1").strip() != "0"
 
 TEST_MODE = not BOT_TOKEN
 
-TICKET_CAPTION = (
-    "🎟 Ряд {row}, место {seat}\n"
-    "Сверка на входе по списку: данные в брони (ФИО, курс, группа) "
-    "должны быть корректными — иначе не пропустят.\n"
-    "Печать по желанию: в масштабе 100% (без «по размеру страницы»)."
-)
+
+def ticket_caption(section: str, row: str, seat: int) -> str:
+    """Подпись к билету: для балкона помечаем секцию."""
+    place = f"Балкон, ряд {row}, место {seat}" if section == "balcony" else f"Ряд {row}, место {seat}"
+    return (
+        f"🎟 {place}\n"
+        "Сверка на входе по списку: данные в брони (ФИО, курс, группа) "
+        "должны быть корректными — иначе не пропустят.\n"
+        "Печать по желанию: в масштабе 100% (без «по размеру страницы»)."
+    )
 
 # ----------------------------------------------------------------------------
 # Схема зала
@@ -182,12 +186,12 @@ async def send_tickets(uid: int, section: str, row: str, seats: list) -> None:
         from ticket import make_ticket
         async with Bot(BOT_TOKEN) as bot:
             for s in sorted(seats):
-                data, name = await asyncio.to_thread(make_ticket, row, s)
+                data, name = await asyncio.to_thread(make_ticket, row, s, section=section)
                 msg = await bot.send_document(
                     chat_id=uid,
                     document=io.BytesIO(data),
                     filename=name,
-                    caption=TICKET_CAPTION.format(row=row, seat=s),
+                    caption=ticket_caption(section, row, s),
                 )
                 # запоминаем сообщение с билетом, чтобы удалить его при отмене брони
                 with db() as conn:
@@ -200,7 +204,7 @@ async def send_tickets(uid: int, section: str, row: str, seats: list) -> None:
                         (uid, section, row, s, uid, msg.message_id,
                          datetime.utcnow().isoformat()),
                     )
-        print(f"TICKETS OK: user={uid} row={row} seats={seats}")
+        print(f"TICKETS OK: user={uid} section={section} row={row} seats={seats}")
     except Exception as e:
         # бронь уже сохранена; билеты можно получить командой /tickets
         print(f"TICKET SEND FAIL: {type(e).__name__}: {e}")
