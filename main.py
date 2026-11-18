@@ -171,7 +171,8 @@ def migrate_parter_29() -> list:
         try:
             rows = conn.execute(
                 "SELECT user_id, section, row, seat, fio, course, grp, ts FROM seats "
-                "WHERE section='parter' AND seat=29 AND row IN (6,7,8,9,10,11)"
+                "WHERE section='parter' AND seat=29 "
+                "AND CAST(row AS INTEGER) IN (6,7,8,9,10,11)"
             ).fetchall()
             for r in rows:
                 spot = _find_free_parter_seat(conn, r["row"], r["seat"])
@@ -318,14 +319,23 @@ class BookIn(BaseModel):
 async def lifespan(app: FastAPI):
     init_db()
 
-    # разовая миграция: места 29 в рядах 6–11 не существуют
-    moved = migrate_parter_29()
+    # разовая миграция: места 29 в рядах 6–11 не существуют.
+    # Ошибки внутри не должны помешать старту приложения.
+    moved = []
+    try:
+        moved = migrate_parter_29()
+    except Exception as e:
+        import traceback
+        print(f"MIGRATION CRASHED (приложение продолжит работу): "
+              f"{type(e).__name__}: {e}")
+        traceback.print_exc()
+        moved = []
     if moved:
-        for m in moved:
-            print(f"SEAT 29 MIGRATED: user={m['user_id']} "
-                  f"ряд {m['old_row']} место 29 -> ряд {m['new_row']} место {m['new_seat']}")
-        if BOT_TOKEN:
-            try:
+        try:
+            for m in moved:
+                print(f"SEAT 29 MIGRATED: user={m['user_id']} "
+                      f"ряд {m['old_row']} место 29 -> ряд {m['new_row']} место {m['new_seat']}")
+            if BOT_TOKEN:
                 from telegram import Bot
                 async with Bot(BOT_TOKEN) as bot:
                     for m in moved:
@@ -341,6 +351,9 @@ async def lifespan(app: FastAPI):
                                 "Старые билеты недействительны — сейчас пришлём новые. "
                                 "Приносим извинения за неудобства!",
                             )
+                            print(f"MIGRATION NOTICE SENT user={m['user_id']}: "
+                                  f"ряд {m['old_row']} место 29 -> "
+                                  f"ряд {m['new_row']} место {m['new_seat']}")
                         except Exception as e:
                             print(f"MIGRATION NOTICE SKIP user={m['user_id']}: "
                                   f"{type(e).__name__}: {e}")
@@ -352,8 +365,12 @@ async def lifespan(app: FastAPI):
                             print(f"MIGRATION DELETE FAIL user={m['user_id']}: "
                                   f"{type(e).__name__}: {e}")
                         # 3) присылаем новые билеты
-                        await send_tickets(m["user_id"], "parter",
-                                           m["new_row"], [m["new_seat"]])
+                        try:
+                            await send_tickets(m["user_id"], "parter",
+                                               m["new_row"], [m["new_seat"]])
+                        except Exception as e:
+                            print(f"MIGRATION SEND FAIL user={m['user_id']}: "
+                                  f"{type(e).__name__}: {e}")
                     # отчёт админам
                     text = "Пересадка несуществующих мест 29 (ряды 6–11):\n" + "\n".join(
                         f"• user {m['user_id']}: ряд {m['old_row']}, место 29 → "
@@ -365,8 +382,10 @@ async def lifespan(app: FastAPI):
                             await bot.send_message(aid, text)
                         except Exception as e:
                             print(f"ADMIN REPORT SKIP {aid}: {type(e).__name__}: {e}")
-            except Exception as e:
-                print(f"MIGRATION NOTIFY FAIL: {type(e).__name__}: {e}")
+        except Exception as e:
+            import traceback
+            print(f"MIGRATION NOTIFY FAIL: {type(e).__name__}: {e}")
+            traceback.print_exc()
 
     if BOT_TOKEN:
         from bot import run_bot_async
