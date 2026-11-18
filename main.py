@@ -123,9 +123,14 @@ def init_db() -> None:
         );
         """)
 
+# Места на балконе, доступные для обычного бронирования
+BOOKABLE_BALCONY = {
+    "2": set(range(26, 30)),  # ряд 2, места 26–29
+}
+
 def seat_is_bookable(section: str, row: str, seat: int) -> bool:
     if section == "balcony":
-        return False
+        return seat in BOOKABLE_BALCONY.get(row, set())
     if section == "parter":
         if row in GROUP_ROWS_PARTER:
             return False
