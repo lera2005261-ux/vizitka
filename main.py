@@ -52,10 +52,10 @@ PARTER_ROWS = {
     "9":  list(range(29, 0, -1)),
     "10": list(range(29, 0, -1)),
     "11": list(range(29, 0, -1)),
+    "12": list(range(26, 14, -1)) + list(range(16, 0, -1)),
 }
 
 GROUP_ROWS_PARTER = {
-    "12": list(range(26, 14, -1)) + list(range(16, 0, -1)),
     "13": list(range(26, 14, -1)) + list(range(16, 0, -1)),
     "14": list(range(26, 14, -1)) + list(range(16, 0, -1)),
     "15": list(range(30, 15, -1)) + list(range(15, 0, -1)),
