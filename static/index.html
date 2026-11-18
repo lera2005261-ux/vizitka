@@ -10,7 +10,7 @@
   .app { max-width: 460px; margin: 0 auto; }
   h2 { margin: 20px 0 10px; font-size: 15px; color: #888; text-align: center; font-weight: 500; text-transform: uppercase; letter-spacing: 1px; }
   .stage { text-align: center; background: linear-gradient(180deg, #2a2a2a, #1a1a1a); color: #fff; padding: 8px; border-radius: 8px; margin: 12px 0; letter-spacing: 4px; font-size: 12px; font-weight: bold; border: 1px solid #333; }
-  .row { display: flex; align-items: center; margin: 4px auto; gap: 4px; width: max-content; }
+  .row { display: flex; align-items: center; justify-content: center; margin: 4px auto; gap: 4px; width: max-content; }
   .row-num { width: 24px; font-size: 11px; color: #666; text-align: right; flex-shrink: 0; font-weight: 600; }
   .row-num.right { text-align: left; }
   .seat { width: 22px; height: 22px; border-radius: 5px; border: 1px solid rgba(255,255,255,0.1); font-size: 10px; display: flex; align-items: center; justify-content: center; cursor: pointer; user-select: none; flex-shrink: 0; transition: all 0.2s ease; font-weight: 600; color: rgba(255,255,255,0.9); }
@@ -53,6 +53,7 @@
   .msg.err { background: #c62828; color: #fff; display: block; border: 1px solid #ef5350; }
 
   .hall-scroll { overflow-x: auto; padding: 10px 0 20px; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; }
+  .hall-inner { display: flex; flex-direction: column; align-items: center; min-width: max-content; margin: 0 auto; }
 </style>
 </head>
 <body>
@@ -78,9 +79,9 @@
 </div>
 
 <div class="stage">СЦЕНА</div>
-<div class="hall-scroll" id="parter"></div>
+<div class="hall-scroll" id="parter-scroll"><div class="hall-inner" id="parter"></div></div>
 <h2>Балкон (места групп)</h2>
-<div class="hall-scroll" id="balcony"></div>
+<div class="hall-scroll" id="balcony-scroll"><div class="hall-inner" id="balcony"></div></div>
 
 <button class="btn" id="book" disabled>Забронировать</button>
 <button class="btn cancel" id="cancel" disabled>Отменить бронь</button>
@@ -136,248 +137,4 @@ function getBalconyColor(row, seat) {
     }
     if (row === 2) {
         if (seat === 30) return C_TEAL;
-        if (seat >= 12 && seat <= 25) return C_GREEN;
-        if (seat >= 9 && seat <= 11) return C_ORANGE;
-        if (seat >= 7 && seat <= 8) return C_BLUE;
-        if (seat >= 5 && seat <= 6) return C_PINK;
-        if (seat >= 1 && seat <= 3) return C_PURPLE;
-        if (seat === 4) return C_LIME;
-    }
-    if (row === 3) {
-        if (seat === 5) return C_BLUE;
-        if (seat >= 3 && seat <= 4) return C_LIME;
-    }
-    return C_GRAY;
-}
-
-function headers() { return initData ? {"X-Telegram-Init-Data": initData} : {}; }
-
-function setGuest(on) {
-  document.getElementById("guest").checked = on;
-  document.getElementById("course").disabled = on;
-  document.getElementById("grp").disabled = on;
-  if (on) {
-    document.getElementById("course").value = "";
-    document.getElementById("grp").value = "";
-  }
-}
-document.getElementById("guest").onchange = (e) => setGuest(e.target.checked);
-
-async function loadProfile() {
-  const r = await fetch("/api/profile", {headers: headers()});
-  if (!r.ok) return;
-  const p = await r.json();
-  if (p.fio) document.getElementById("fio").value = p.fio;
-  if (p.course === "гость" && p.grp === "гость") {
-    setGuest(true);
-  } else {
-    if (p.course) document.getElementById("course").value = p.course;
-    if (p.grp) document.getElementById("grp").value = p.grp;
-  }
-}
-
-async function saveProfile() {
-  const isGuest = document.getElementById("guest").checked;
-  const fio = document.getElementById("fio").value.trim();
-  const course = document.getElementById("course").value.trim();
-  const grp = document.getElementById("grp").value.trim();
-  if (!fio) { showMsg("Укажите ФИО", "err"); return; }
-  if (!isGuest && (!course || !grp)) {
-    showMsg("Заполните курс и группу (или отметьте «Я гость»)", "err");
-    return;
-  }
-  const r = await fetch("/api/profile", {
-    method: "POST",
-    headers: {"Content-Type": "application/json", ...headers()},
-    body: JSON.stringify({
-      fio,
-      course: isGuest ? "гость" : course,
-      grp: isGuest ? "гость" : grp,
-      is_guest: isGuest
-    })
-  });
-  if (r.ok) showMsg("Данные сохранены", "ok");
-  else showMsg("Ошибка сохранения", "err");
-}
-
-function showMsg(text, kind) {
-  const m = document.getElementById("msg");
-  m.textContent = text;
-  m.className = "msg " + kind;
-  setTimeout(() => m.className = "msg", 4000);
-}
-
-function updateButtons() {
-  let hasFree = false, hasMine = false;
-  for (const kk of selected) {
-      const el = document.querySelector(`.seat[data-key="${kk}"]`);
-      if (el) {
-          if (el.classList.contains("mine")) hasMine = true;
-          if (el.classList.contains("free")) hasFree = true;
-      }
-  }
-  document.getElementById("book").disabled = !hasFree;
-  document.getElementById("cancel").disabled = !hasMine;
-}
-
-function render(seats) {
-  const parter = document.getElementById("parter");
-  const balcony = document.getElementById("balcony");
-  parter.innerHTML = ""; balcony.innerHTML = "";
-
-  const byRow = {};
-  for (const s of seats) {
-    const k = `${s.section}|${s.row}`;
-    (byRow[k] ||= []).push(s);
-  }
-
-  const sortedKeys = Object.keys(byRow).sort((a, b) => {
-      const [secA, rowA] = a.split("|"); const [secB, rowB] = b.split("|");
-      if (secA !== secB) return secA === "parter" ? -1 : 1;
-      return +rowA - +rowB;
-  });
-
-  for (const k of sortedKeys) {
-    const [section, row] = k.split("|");
-    const isBalcony = section === "balcony";
-    const container = isBalcony ? balcony : parter;
-
-    const rowDiv = document.createElement("div");
-    rowDiv.className = "row";
-
-    const rn = document.createElement("div");
-    rn.className = "row-num"; rn.textContent = row;
-    rowDiv.appendChild(rn);
-
-    const sortedSeats = byRow[k].sort((a, b) => b.seat - a.seat);
-
-    for (const s of sortedSeats) {
-      const el = document.createElement("div");
-      el.className = "seat " + s.status;
-
-      if (s.status === "group") {
-          if (section === "parter") el.classList.add(getParterGroupColor(row, s.seat));
-          else el.classList.add(getBalconyColor(row, s.seat));
-      }
-
-      el.textContent = s.seat;
-      el.dataset.key = key(s.section, s.row, s.seat);
-
-      if (selected.has(el.dataset.key)) el.classList.add("selected");
-
-      if (s.status === "free" || s.status === "mine") {
-        el.onclick = () => {
-          const kk = el.dataset.key;
-          if (selected.has(kk)) { selected.delete(kk); el.classList.remove("selected"); }
-          else { selected.add(kk); el.classList.add("selected"); }
-          updateButtons();
-        };
-      } else {
-        el.style.pointerEvents = "none";
-      }
-      rowDiv.appendChild(el);
-    }
-
-    const rnRight = document.createElement("div");
-    rnRight.className = "row-num right"; rnRight.textContent = row;
-    rowDiv.appendChild(rnRight);
-
-    container.appendChild(rowDiv);
-  }
-  updateButtons();
-}
-
-async function loadState() {
-  const r = await fetch("/api/state", {headers: headers()});
-  const data = await r.json();
-  const available = new Set(data.seats.filter(s => s.status === "free" || s.status === "mine").map(s => key(s.section, s.row, s.seat)));
-  for (const kk of Array.from(selected)) { if (!available.has(kk)) selected.delete(kk); }
-  render(data.seats);
-}
-
-async function book() {
-  if (selected.size === 0) return;
-  const groups = {};
-  for (const kk of selected) {
-    const [section, row, seat] = kk.split("|");
-    const gk = section + "|" + row;
-    (groups[gk] ||= []).push(+seat);
-  }
-
-  document.getElementById("book").disabled = true;
-  document.getElementById("book").textContent = "Бронируем...";
-
-  for (const gk of Object.keys(groups)) {
-    const [section, row] = gk.split("|");
-    const r = await fetch("/api/book", {
-      method: "POST",
-      headers: {"Content-Type": "application/json", ...headers()},
-      body: JSON.stringify({section, row, seats: groups[gk]})
-    });
-    if (!r.ok) {
-      const err = await r.json().catch(() => ({detail: "Ошибка"}));
-      showMsg(err.detail || "Ошибка брони", "err");
-      document.getElementById("book").textContent = "Забронировать";
-      document.getElementById("book").disabled = false;
-      return;
-    }
-  }
-
-  showMsg("Забронировано!", "ok");
-  selected.clear();
-  await loadState();
-  document.getElementById("book").textContent = "Забронировать";
-}
-
-async function cancel() {
-  if (selected.size === 0) return;
-  const mySeats = [];
-  for (const kk of selected) {
-      const parts = kk.split("|");
-      const el = document.querySelector(`.seat[data-key="${kk}"]`);
-      if (el && el.classList.contains("mine")) mySeats.push(parts);
-  }
-
-  if (mySeats.length === 0) { showMsg("Выбранные места вам не принадлежат", "err"); return; }
-
-  const groups = {};
-  for (const [section, row, seat] of mySeats) {
-    const gk = section + "|" + row;
-    (groups[gk] ||= []).push(+seat);
-  }
-
-  document.getElementById("cancel").disabled = true;
-  document.getElementById("cancel").textContent = "Отмена...";
-
-  for (const gk of Object.keys(groups)) {
-    const [section, row] = gk.split("|");
-    const r = await fetch("/api/book", {
-      method: "DELETE",
-      headers: {"Content-Type": "application/json", ...headers()},
-      body: JSON.stringify({section, row, seats: groups[gk]})
-    });
-    if (!r.ok) {
-      const err = await r.json().catch(() => ({detail: "Ошибка"}));
-      showMsg(err.detail || "Ошибка отмены", "err");
-      document.getElementById("cancel").textContent = "Отменить бронь";
-      document.getElementById("cancel").disabled = false;
-      return;
-    }
-  }
-
-  showMsg("Бронь отменена", "ok");
-  selected.clear();
-  await loadState();
-  document.getElementById("cancel").textContent = "Отменить бронь";
-}
-
-document.getElementById("save").onclick = saveProfile;
-document.getElementById("book").onclick = book;
-document.getElementById("cancel").onclick = cancel;
-
-loadProfile();
-loadState();
-setInterval(loadState, 10000);
-</script>
-</body>
-</html>
+        if (seat >= 12
