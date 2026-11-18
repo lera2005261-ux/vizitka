@@ -45,11 +45,11 @@ def ticket_caption(section: str, row: str, seat: int) -> str:
 # Схема зала
 # ----------------------------------------------------------------------------
 PARTER_ROWS = {
-    "1":  list(range(21, 0, -1)),
-    "2":  list(range(23, 0, -1)),
-    "3":  list(range(23, 0, -1)),
-    "4":  list(range(24, 0, -1)),
-    "5":  list(range(25, 0, -1)),
+    "1":  list(range(21, 0, -1)),   # 21 место
+    "2":  list(range(23, 0, -1)),   # 23 места
+    "3":  list(range(23, 0, -1)),   # 23 места
+    "4":  list(range(24, 0, -1)),   # 24 места
+    "5":  list(range(25, 0, -1)),   # 25 мест
     "6":  list(range(28, 0, -1)),   # места 29 не существует — схема исправлена
     "7":  list(range(28, 0, -1)),
     "8":  list(range(28, 0, -1)),
@@ -57,12 +57,13 @@ PARTER_ROWS = {
     "10": list(range(28, 0, -1)),
     "11": list(range(28, 0, -1)),
     "12": list(range(26, 0, -1)),   # ряд 12 открыт для бронирования (26 мест)
+    "23": list(range(24, 0, -1)),   # 24 места для брони; 25–26 — группа 4
 }
 
 GROUP_ROWS_PARTER = {
-    "13": list(range(26, 14, -1)) + list(range(16, 0, -1)),
-    "14": list(range(26, 14, -1)) + list(range(16, 0, -1)),
-    "15": list(range(30, 15, -1)) + list(range(15, 0, -1)),
+    "13": list(range(30, 0, -1)),   # 30 мест
+    "14": list(range(30, 0, -1)),   # 30 мест
+    "15": list(range(30, 15, -1)) + list(range(15, 0, -1)),   # проход между 16 и 14
     "16": list(range(30, 15, -1)) + list(range(15, 0, -1)),
     "17": list(range(30, 15, -1)) + list(range(15, 0, -1)),
     "18": list(range(30, 15, -1)) + list(range(15, 0, -1)),
@@ -70,7 +71,7 @@ GROUP_ROWS_PARTER = {
     "20": list(range(30, 15, -1)) + list(range(15, 0, -1)),
     "21": list(range(30, 15, -1)) + list(range(15, 0, -1)),
     "22": list(range(30, 15, -1)) + list(range(15, 0, -1)),
-    "23": list(range(24, 14, -1)) + list(range(13, 0, -1)),
+    "23": [26, 25],                 # места 25 и 26 — группа 4 (гуп-4)
 }
 
 BALCONY_ROWS = {
@@ -135,15 +136,16 @@ def seat_is_bookable(section: str, row: str, seat: int) -> bool:
     if section == "balcony":
         return seat in BOOKABLE_BALCONY.get(row, set())
     if section == "parter":
-        if row in GROUP_ROWS_PARTER:
-            return False
+        if row in GROUP_ROWS_PARTER and seat in GROUP_ROWS_PARTER[row]:
+            return False   # это конкретное место закреплено за группой
         if row not in PARTER_ROWS:
             return False
         return seat in PARTER_ROWS[row]
     return False
 
 # ----------------------------------------------------------------------------
-# Миграция: места 29 в рядах 6–11 не существуют — пересаживаем бронировавших
+# Миграция: места 29 в рядах 6–11 не существуют — пересаживаем бронировавших.
+# Запускается вручную админ-командой /fix29 (НЕ при старте приложения!)
 # ----------------------------------------------------------------------------
 def _find_free_parter_seat(conn: sqlite3.Connection, orig_row: str, orig_seat: int):
     """Ищет свободное место: сначала тот же ряд (максимальный номер —
@@ -318,74 +320,6 @@ class BookIn(BaseModel):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
-
-    # разовая миграция: места 29 в рядах 6–11 не существуют.
-    # Ошибки внутри не должны помешать старту приложения.
-    moved = []
-    try:
-        moved = migrate_parter_29()
-    except Exception as e:
-        import traceback
-        print(f"MIGRATION CRASHED (приложение продолжит работу): "
-              f"{type(e).__name__}: {e}")
-        traceback.print_exc()
-        moved = []
-    if moved:
-        try:
-            for m in moved:
-                print(f"SEAT 29 MIGRATED: user={m['user_id']} "
-                      f"ряд {m['old_row']} место 29 -> ряд {m['new_row']} место {m['new_seat']}")
-            if BOT_TOKEN:
-                from telegram import Bot
-                async with Bot(BOT_TOKEN) as bot:
-                    for m in moved:
-                        # 1) объяснение: что случилось и что место изменилось
-                        try:
-                            await bot.send_message(
-                                m["user_id"],
-                                "⚠️ Произошла техническая ошибка: место 29 в ряду "
-                                f"{m['old_row']} в зале фактически не существует, "
-                                "и забронировать его было нельзя.\n\n"
-                                f"Вам автоматически выделено другое место: "
-                                f"ряд {m['new_row']}, место {m['new_seat']}.\n"
-                                "Старые билеты недействительны — сейчас пришлём новые. "
-                                "Приносим извинения за неудобства!",
-                            )
-                            print(f"MIGRATION NOTICE SENT user={m['user_id']}: "
-                                  f"ряд {m['old_row']} место 29 -> "
-                                  f"ряд {m['new_row']} место {m['new_seat']}")
-                        except Exception as e:
-                            print(f"MIGRATION NOTICE SKIP user={m['user_id']}: "
-                                  f"{type(e).__name__}: {e}")
-                        # 2) удаляем старые билеты (ряд старый, место 29)
-                        try:
-                            await delete_ticket_msgs(m["user_id"], "parter",
-                                                     m["old_row"], [29])
-                        except Exception as e:
-                            print(f"MIGRATION DELETE FAIL user={m['user_id']}: "
-                                  f"{type(e).__name__}: {e}")
-                        # 3) присылаем новые билеты
-                        try:
-                            await send_tickets(m["user_id"], "parter",
-                                               m["new_row"], [m["new_seat"]])
-                        except Exception as e:
-                            print(f"MIGRATION SEND FAIL user={m['user_id']}: "
-                                  f"{type(e).__name__}: {e}")
-                    # отчёт админам
-                    text = "Пересадка несуществующих мест 29 (ряды 6–11):\n" + "\n".join(
-                        f"• user {m['user_id']}: ряд {m['old_row']}, место 29 → "
-                        f"ряд {m['new_row']}, место {m['new_seat']}"
-                        for m in moved
-                    )
-                    for aid in ADMIN_IDS:
-                        try:
-                            await bot.send_message(aid, text)
-                        except Exception as e:
-                            print(f"ADMIN REPORT SKIP {aid}: {type(e).__name__}: {e}")
-        except Exception as e:
-            import traceback
-            print(f"MIGRATION NOTIFY FAIL: {type(e).__name__}: {e}")
-            traceback.print_exc()
 
     if BOT_TOKEN:
         from bot import run_bot_async
