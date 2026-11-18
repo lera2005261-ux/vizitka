@@ -52,7 +52,7 @@ PARTER_ROWS = {
     "9":  list(range(29, 0, -1)),
     "10": list(range(29, 0, -1)),
     "11": list(range(29, 0, -1)),
-    "12": list(range(26, 14, -1)) + list(range(16, 0, -1)),
+    "12": list(range(26, 0, -1)),   # ряд 12 открыт для бронирования (26 мест)
 }
 
 GROUP_ROWS_PARTER = {
@@ -67,12 +67,11 @@ GROUP_ROWS_PARTER = {
     "21": list(range(30, 15, -1)) + list(range(15, 0, -1)),
     "22": list(range(30, 15, -1)) + list(range(15, 0, -1)),
     "23": list(range(24, 14, -1)) + list(range(13, 0, -1)),
-    
 }
 
 BALCONY_ROWS = {
     "1": [10, 9, 8, 7, 6, 5, 4, 3, 2, 1],
-    "2": [30, 25, 24, 23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1],
+    "2": [30, 29, 28, 27, 26, 25, 24, 23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1],
     "3": [29, 28, 27, 26, 25, 24, 23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1],
     "4": [29, 28, 27, 26, 25, 24, 23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1],
     "5": [28, 27, 26, 25, 24, 23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1],
@@ -295,8 +294,17 @@ def api_state(request: Request):
             seats.append({"section": "parter", "row": row, "seat": s, "status": "group"})
 
     for row, seats_list in BALCONY_ROWS.items():
+        bookable = BOOKABLE_BALCONY.get(row, set())
         for s in seats_list:
-            seats.append({"section": "balcony", "row": row, "seat": s, "status": "group"})
+            if s in bookable:
+                key = ("balcony", row, s)
+                if key in busy:
+                    seats.append({"section": "balcony", "row": row, "seat": s,
+                                  "status": "mine" if busy[key] == uid else "busy"})
+                else:
+                    seats.append({"section": "balcony", "row": row, "seat": s, "status": "free"})
+            else:
+                seats.append({"section": "balcony", "row": row, "seat": s, "status": "group"})
 
     return {"seats": seats, "max_seats": MAX_SEATS, "user_id": uid, "test_mode": TEST_MODE}
 
