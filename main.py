@@ -169,7 +169,7 @@ def current_user(request: Request) -> Optional[dict]:
         return None
 
 # ----------------------------------------------------------------------------
-# Отправка билетов в Telegram
+# Отправка и удаление билетов в Telegram
 # ----------------------------------------------------------------------------
 async def send_tickets(uid: int, section: str, row: str, seats: list) -> None:
     try:
