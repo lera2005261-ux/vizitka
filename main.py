@@ -175,7 +175,11 @@ async def send_tickets(uid: int, section: str, row: str, seats: list) -> None:
                     chat_id=uid,
                     document=io.BytesIO(data),
                     filename=name,
-                    caption=f"🎟 Ряд {row}, место {s}\nПечатайте в масштабе 100% (без «по размеру страницы»).",
+                    caption=(
+                        f"🎟 Ряд {row}, место {s}\n"
+                        "Билеты сверяются на входе по списку — сохраните до мероприятия.\n"
+                        "Печать по желанию: в масштабе 100% (без «по размеру страницы»)."
+                    ),
                 )
                 # запоминаем сообщение с билетом, чтобы удалить его при отмене брони
                 with db() as conn:
