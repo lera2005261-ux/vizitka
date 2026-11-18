@@ -103,6 +103,16 @@ def init_db() -> None:
             course  TEXT NOT NULL,
             grp     TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS ticket_msgs (
+            user_id    INTEGER NOT NULL,
+            section    TEXT NOT NULL,
+            row        TEXT NOT NULL,
+            seat       INTEGER NOT NULL,
+            chat_id    INTEGER NOT NULL,
+            message_id INTEGER NOT NULL,
+            ts         TEXT NOT NULL,
+            PRIMARY KEY (section, row, seat)
+        );
         """)
 
 def seat_is_bookable(section: str, row: str, seat: int) -> bool:
@@ -154,22 +164,66 @@ def current_user(request: Request) -> Optional[dict]:
 # ----------------------------------------------------------------------------
 # Отправка билетов в Telegram
 # ----------------------------------------------------------------------------
-async def send_tickets(uid: int, row: str, seats: list) -> None:
+async def send_tickets(uid: int, section: str, row: str, seats: list) -> None:
     try:
         from telegram import Bot
         from ticket import make_ticket
         async with Bot(BOT_TOKEN) as bot:
             for s in sorted(seats):
                 data, name = await asyncio.to_thread(make_ticket, row, s)
-                await bot.send_document(
+                msg = await bot.send_document(
                     chat_id=uid,
                     document=io.BytesIO(data),
                     filename=name,
                     caption=f"🎟 Ряд {row}, место {s}\nПечатайте в масштабе 100% (без «по размеру страницы»).",
                 )
+                # запоминаем сообщение с билетом, чтобы удалить его при отмене брони
+                with db() as conn:
+                    conn.execute(
+                        "INSERT INTO ticket_msgs(user_id,section,row,seat,chat_id,message_id,ts) "
+                        "VALUES(?,?,?,?,?,?,?) "
+                        "ON CONFLICT(section,row,seat) DO UPDATE SET "
+                        "user_id=excluded.user_id, chat_id=excluded.chat_id, "
+                        "message_id=excluded.message_id, ts=excluded.ts",
+                        (uid, section, row, s, uid, msg.message_id,
+                         datetime.utcnow().isoformat()),
+                    )
+        print(f"TICKETS OK: user={uid} row={row} seats={seats}")
     except Exception as e:
         # бронь уже сохранена; билеты можно получить командой /tickets
         print(f"TICKET SEND FAIL: {type(e).__name__}: {e}")
+
+
+async def delete_ticket_msgs(uid: int, section: str, row: str, seats: list) -> None:
+    """Удаляет сообщения с билетами из чата после отмены брони."""
+    from telegram import Bot
+    msgs = []
+    with db() as conn:
+        for s in seats:
+            r = conn.execute(
+                "SELECT chat_id, message_id FROM ticket_msgs "
+                "WHERE section=? AND row=? AND seat=? AND user_id=?",
+                (section, row, s, uid),
+            ).fetchone()
+            if r:
+                msgs.append((r["chat_id"], r["message_id"]))
+                conn.execute(
+                    "DELETE FROM ticket_msgs WHERE section=? AND row=? AND seat=?",
+                    (section, row, s),
+                )
+    if not msgs:
+        return
+    try:
+        async with Bot(BOT_TOKEN) as bot:
+            for chat_id, message_id in msgs:
+                try:
+                    await bot.delete_message(chat_id=chat_id, message_id=message_id)
+                except Exception as e:
+                    # чаще всего: сообщение старше 48 часов или уже удалено вручную
+                    print(f"TICKET DELETE SKIP: {type(e).__name__}: {e}")
+        print(f"TICKET MESSAGES DELETED: user={uid} row={row} seats={seats}")
+    except Exception as e:
+        print(f"TICKET DELETE FAIL: {type(e).__name__}: {e}")
 
 # ----------------------------------------------------------------------------
 # Модели
@@ -305,11 +359,11 @@ def api_book(request: Request, b: BookIn, background: BackgroundTasks):
 
     # бронь сохранена -> отправляем билеты (по одному файлу на место)
     if BOT_TOKEN:
-        background.add_task(send_tickets, uid, b.row, list(b.seats))
+        background.add_task(send_tickets, uid, b.section, b.row, list(b.seats))
     return {"ok": True}
 
 @app.delete("/api/book")
-def api_cancel(request: Request, b: BookIn):
+def api_cancel(request: Request, b: BookIn, background: BackgroundTasks):
     user = current_user(request)
     if not user:
         raise HTTPException(401, "Не авторизован")
@@ -333,6 +387,10 @@ def api_cancel(request: Request, b: BookIn):
 
     if not deleted:
         raise HTTPException(400, "Эти места вам не принадлежат или уже отменены")
+
+    # бронь отменена -> удаляем сообщения с билетами из чата
+    if BOT_TOKEN:
+        background.add_task(delete_ticket_msgs, uid, b.section, b.row, list(deleted))
     return {"ok": True, "deleted": deleted}
 
 @app.get("/api/export")
