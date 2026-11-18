@@ -9,13 +9,6 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 
 WEBAPP_URL = ""
 
-TICKET_CAPTION = (
-    "🎟 Ряд {row}, место {seat}\n"
-    "Сверка на входе по списку: данные в брони (ФИО, курс, группа) "
-    "должны быть корректными — иначе не пропустят.\n"
-    "Печать по желанию: в масштабе 100% (без «по размеру страницы»)."
-)
-
 
 async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     kb = InlineKeyboardMarkup([[
@@ -56,11 +49,12 @@ def _save_ticket_msg(uid: int, section: str, row: str, seat: int, chat_id: int, 
 async def tickets(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Повторно присылает билеты на все места гостя (по одному файлу на место)."""
     from ticket import make_ticket
+    from main import ticket_caption
     conn = sqlite3.connect(os.getenv("DB_PATH", "seats.db"))
     conn.row_factory = sqlite3.Row
     rows = conn.execute(
         "SELECT section, row, seat FROM seats WHERE user_id=? "
-        "ORDER BY CAST(row AS INTEGER), seat",
+        "ORDER BY section DESC, CAST(row AS INTEGER), seat",
         (update.effective_user.id,)
     ).fetchall()
     conn.close()
@@ -69,10 +63,10 @@ async def tickets(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
     for r in rows:
         section, row, seat = r["section"], r["row"], r["seat"]
-        data, name = await asyncio.to_thread(make_ticket, row, seat)
+        data, name = await asyncio.to_thread(make_ticket, row, seat, section=section)
         msg = await update.message.reply_document(
             document=io.BytesIO(data), filename=name,
-            caption=TICKET_CAPTION.format(row=row, seat=seat),
+            caption=ticket_caption(section, row, seat),
         )
         try:
             _save_ticket_msg(update.effective_user.id, section, row, seat,
