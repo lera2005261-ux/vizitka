@@ -352,53 +352,61 @@ app = FastAPI(lifespan=lifespan)
 # API
 # ----------------------------------------------------------------------------
 @app.get("/api/state")
+@app.get("/api/state")
 def api_state(request: Request):
     user = current_user(request)
     uid = user["id"] if user else None
 
     seats = []
+    seen_keys = set()  # <--- Защита от дублирования
+
     with db() as conn:
         rows = conn.execute("SELECT section,row,seat,user_id FROM seats").fetchall()
     busy = {(r["section"], r["row"], r["seat"]): r["user_id"] for r in rows}
 
+    def add_seat(sec, r, s, stat):
+        k = (sec, r, s)
+        if k not in seen_keys:
+            seats.append({"section": sec, "row": r, "seat": s, "status": stat})
+            seen_keys.add(k)
+
+    # 1. Сначала добавляем гостевые места партера
     for row, seats_list in PARTER_ROWS.items():
         for s in seats_list:
             key = ("parter", row, s)
             if key in busy:
-                seats.append({"section": "parter", "row": row, "seat": s,
-                              "status": "mine" if busy[key] == uid else "busy"})
+                add_seat("parter", row, s, "mine" if busy[key] == uid else "busy")
             else:
-                seats.append({"section": "parter", "row": row, "seat": s, "status": "free"})
+                add_seat("parter", row, s, "free")
 
+    # 2. Затем групповые места партера (если они не добавились в п.1)
     for row, seats_list in GROUP_ROWS_PARTER.items():
         for s in seats_list:
-            seats.append({"section": "parter", "row": row, "seat": s, "status": "group"})
+            add_seat("parter", row, s, "group")
 
+    # 3. Затем места под пересадку (если они не добавились в п.1 и п.2)
     for row, seats_list in RESEAT_ROWS.items():
         for s in seats_list:
             key = ("parter", row, s)
             if key in busy:
-                seats.append({"section": "parter", "row": row, "seat": s,
-                              "status": "mine" if busy[key] == uid else "busy"})
+                add_seat("parter", row, s, "mine" if busy[key] == uid else "busy")
             else:
-                seats.append({"section": "parter", "row": row, "seat": s, "status": "group"})
+                add_seat("parter", row, s, "group")
 
+    # 4. Затем балкон
     for row, seats_list in BALCONY_ROWS.items():
         bookable = BOOKABLE_BALCONY.get(row, set())
         for s in seats_list:
             if s in bookable:
                 key = ("balcony", row, s)
                 if key in busy:
-                    seats.append({"section": "balcony", "row": row, "seat": s,
-                                  "status": "mine" if busy[key] == uid else "busy"})
+                    add_seat("balcony", row, s, "mine" if busy[key] == uid else "busy")
                 else:
-                    seats.append({"section": "balcony", "row": row, "seat": s, "status": "free"})
+                    add_seat("balcony", row, s, "free")
             else:
-                seats.append({"section": "balcony", "row": row, "seat": s, "status": "group"})
+                add_seat("balcony", row, s, "group")
 
     return {"seats": seats, "max_seats": MAX_SEATS, "user_id": uid, "test_mode": TEST_MODE}
-
-@app.get("/api/profile")
 def api_profile(request: Request):
     user = current_user(request)
     if not user:
