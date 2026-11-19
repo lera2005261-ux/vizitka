@@ -316,6 +316,65 @@ async def broadcast(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         report += f"\n⚠️ Не удалось отправить {len(fail)} пользователям (возможно, они заблокировали бота)."
     await update.message.reply_text(report)
 
+BALCONY_WARNING = (
+    "⚠️ Важная информация по вашей брони на балконе!\n\n"
+    "Если в партере будет мало гостей, организаторы могут пересадить вас в партер. "
+    "В этом случае мы пришлём уведомление и новый билет.\n\n"
+    "Ничего делать не нужно — просто имейте это в виду. Спасибо за понимание!"
+)
+
+async def warn_balcony(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Админ: /warn_balcony — предупреждение тем, у кого есть места на балконе и кто его ещё
+    не получал. /warn_balcony all — отправить всем балконным ещё раз."""
+    print("DEBUG: Команда /warn_balcony получена!")
+    admin_ids = {int(x) for x in os.getenv("ADMIN_IDS", "").split(",") if x}
+    if update.effective_user.id not in admin_ids:
+        await update.message.reply_text("Нет доступа")
+        return
+
+    from telegram import Bot
+    resend_all = bool(ctx.args) and ctx.args[0].lower() == "all"
+    db_path = os.getenv("DB_PATH", "seats.db")
+
+    conn = sqlite3.connect(db_path, isolation_level=None)
+    conn.execute("CREATE TABLE IF NOT EXISTS balcony_warned (user_id INTEGER PRIMARY KEY, ts TEXT NOT NULL)")
+    holders = [r[0] for r in conn.execute("SELECT DISTINCT user_id FROM seats WHERE section='balcony'").fetchall()]
+    warned = {r[0] for r in conn.execute("SELECT user_id FROM balcony_warned").fetchall()}
+    conn.close()
+
+    if not holders:
+        await update.message.reply_text("Балконных броней пока нет.")
+        return
+    targets = [u for u in holders if resend_all or u not in warned]
+    if not targets:
+        await update.message.reply_text(
+            "Все, у кого есть места на балконе, уже получили предупреждение.\n"
+            "Чтобы отправить повторно всем: /warn_balcony all")
+        return
+
+    await update.message.reply_text(f"Отправляю предупреждение {len(targets)} пользователям…")
+
+    ok, fail = 0, []
+    async with Bot(os.environ["BOT_TOKEN"]) as bot:
+        for uid in targets:
+            try:
+                await bot.send_message(chat_id=uid, text=BALCONY_WARNING)
+                c = sqlite3.connect(db_path, isolation_level=None)
+                try:
+                    c.execute("INSERT OR REPLACE INTO balcony_warned(user_id, ts) VALUES(?,?)",
+                              (uid, datetime.utcnow().isoformat()))
+                finally:
+                    c.close()
+                ok += 1
+            except Exception as e:
+                print(f"WARN_BALCONY FAIL user={uid}: {type(e).__name__}: {e}")
+                fail.append(uid)
+
+    report = f"✅ Предупреждение отправлено: {ok}."
+    if fail:
+        report += f"\n⚠️ Не удалось: {len(fail)} (возможно, заблокировали бота): {', '.join(map(str, fail))}"
+    await update.message.reply_text(report)
+
 async def run_bot_async(token: str, webapp_url: str):
     global WEBAPP_URL
     WEBAPP_URL = webapp_url
@@ -327,6 +386,7 @@ async def run_bot_async(token: str, webapp_url: str):
     app.add_handler(CommandHandler("fix29", fix29))
     app.add_handler(CommandHandler("fix12", fix12))
     app.add_handler(CommandHandler("broadcast", broadcast))
+    app.add_handler(CommandHandler("warn_balcony", warn_balcony))
     async with app:
         await app.start()
         await app.updater.start_polling()
