@@ -263,6 +263,7 @@ class BookIn(BaseModel):
     section: str
     row: str
     seats: list[int]
+    ack: bool = False
 
 # ----------------------------------------------------------------------------
 # FastAPI
