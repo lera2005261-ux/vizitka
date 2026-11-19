@@ -22,8 +22,8 @@
   .seat.selected { outline: 2px solid #ffd54f; outline-offset: 2px; z-index: 10; box-shadow: 0 0 10px rgba(255, 213, 79, 0.8); }
   .seat.group { cursor: not-allowed; border: 1px solid rgba(255,255,255,0.05); color: #000; font-weight: 800; opacity: 0.9; }
 
-  .g-red { background: #87CEEB; color: #000; }   /* УИР-1 — голубой */
-  .g-teal { background: #E6E6FA; color: #000; }  /* УИР-2 — лавандовый */
+  .g-red { background: #87CEEB; color: #000; }
+  .g-teal { background: #E6E6FA; color: #000; }
   .g-orange { background: #f08c00; color: #fff; }
   .g-blue { background: #1971c2; color: #fff; }
   .g-green { background: #2f9e44; color: #fff; }
@@ -107,11 +107,8 @@ const C_RED = "g-red", C_TEAL = "g-teal", C_ORANGE = "g-orange", C_BLUE = "g-blu
 
 function getParterGroupColor(row, seat) {
     row = parseInt(row);
-    // ГУП-1 (Красный) — левая часть 15 и 16, и 30-е место
-    if ((row === 15 || row === 16) && seat >= 16 && seat <= 30) return C_RED;
-    if (row === 17 && seat === 30) return C_RED;
-    if (row === 14) return C_GRAY;                 // ряд 14 — под пересадку с 12
-    if (row === 15 && seat >= 16) return C_GRAY;   // часть ряда 15 — под пересадку
+    if (row === 14) return C_GRAY;
+    if (row === 15 && seat >= 16) return C_GRAY;
     if ((row === 15 || row === 16) && seat >= 16 && seat <= 30) return C_RED;
     if (row === 17 && seat === 30) return C_RED;
     if (row === 17 && seat >= 16 && seat <= 29) return C_TEAL;
@@ -187,9 +184,7 @@ async function loadProfile() {
       if (p.course) document.getElementById("course").value = p.course;
       if (p.grp) document.getElementById("grp").value = p.grp;
     }
-  } catch (e) {
-    console.log("loadProfile error:", e);
-  }
+  } catch (e) { console.log(e); }
 }
 
 async function saveProfile() {
@@ -198,19 +193,11 @@ async function saveProfile() {
   const course = document.getElementById("course").value.trim();
   const grp = document.getElementById("grp").value.trim();
   if (!fio) { showMsg("Укажите ФИО", "err"); return; }
-  if (!isGuest && (!course || !grp)) {
-    showMsg("Заполните курс и группу (или отметьте «Я гость»)", "err");
-    return;
-  }
+  if (!isGuest && (!course || !grp)) { showMsg("Заполните курс и группу", "err"); return; }
   const r = await fetch("/api/profile", {
     method: "POST",
     headers: {"Content-Type": "application/json", ...headers()},
-    body: JSON.stringify({
-      fio,
-      course: isGuest ? "гость" : course,
-      grp: isGuest ? "гость" : grp,
-      is_guest: isGuest
-    })
+    body: JSON.stringify({ fio, course: isGuest ? "гость" : course, grp: isGuest ? "гость" : grp, is_guest: isGuest })
   });
   if (r.ok) showMsg("Данные сохранены", "ok");
   else showMsg("Ошибка сохранения", "err");
@@ -271,6 +258,15 @@ function render(seats) {
       const el = document.createElement("div");
       el.className = "seat " + s.status;
 
+      // НАЧАЛО ПРИНУДИТЕЛЬНОЙ ПРАВКИ ДЛЯ 14 РЯДА
+      if (section === "parter" && row === "14") {
+          if (s.status !== "busy" && s.status !== "mine" && s.seat !== 25) {
+              el.className = "seat group";
+              el.classList.add(C_GRAY);
+          }
+      }
+      // КОНЕЦ ПРАВКИ
+
       if (s.status === "group") {
           if (section === "parter") el.classList.add(getParterGroupColor(row, s.seat));
           else el.classList.add(getBalconyColor(row, s.seat));
@@ -306,16 +302,13 @@ function render(seats) {
 async function loadState() {
   try {
     const r = await fetch("/api/state", {headers: headers()});
-    if (!r.ok) {
-      showMsg("Сервер вернул ошибку " + r.status, "err");
-      return;
-    }
+    if (!r.ok) { showMsg("Ошибка сервера " + r.status, "err"); return; }
     const data = await r.json();
     const available = new Set(data.seats.filter(s => s.status === "free" || s.status === "mine").map(s => key(s.section, s.row, s.seat)));
     for (const kk of Array.from(selected)) { if (!available.has(kk)) selected.delete(kk); }
     render(data.seats);
   } catch (e) {
-    showMsg("Не удалось загрузить схему: " + e, "err");
+    showMsg("Ошибка загрузки схемы: " + e, "err");
   }
 }
 
@@ -362,7 +355,7 @@ async function cancel() {
       if (el && el.classList.contains("mine")) mySeats.push(parts);
   }
 
-  if (mySeats.length === 0) { showMsg("Выбранные места вам не принадлежат", "err"); return; }
+  if (mySeats.length === 0) { showMsg("Места вам не принадлежат", "err"); return; }
 
   const groups = {};
   for (const [section, row, seat] of mySeats) {
