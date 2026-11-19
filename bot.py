@@ -9,7 +9,6 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 
 WEBAPP_URL = ""
 
-
 async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     kb = InlineKeyboardMarkup([[
         InlineKeyboardButton("🎭 Выбрать места", web_app=WebAppInfo(url=WEBAPP_URL))
@@ -27,9 +26,7 @@ async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         reply_markup=kb,
     )
 
-
 def _save_ticket_msg(uid: int, section: str, row: str, seat: int, chat_id: int, message_id: int) -> None:
-    """Запоминает сообщение с билетом, чтобы при отмене брони его можно было удалить."""
     db_path = os.getenv("DB_PATH", "seats.db")
     conn = sqlite3.connect(db_path, isolation_level=None)
     conn.execute("PRAGMA journal_mode=WAL")
@@ -45,9 +42,7 @@ def _save_ticket_msg(uid: int, section: str, row: str, seat: int, chat_id: int, 
     finally:
         conn.close()
 
-
 async def tickets(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """Повторно присылает билеты на все места гостя (по одному файлу на место)."""
     from ticket import make_ticket
     from main import ticket_caption
     conn = sqlite3.connect(os.getenv("DB_PATH", "seats.db"))
@@ -74,10 +69,7 @@ async def tickets(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             print(f"TICKET MSG SAVE SKIP: {type(e).__name__}: {e}")
 
-
 async def resend(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """Админ-команда: удаляет старые балконные билеты и рассылает их заново
-    в новом формате (с плашкой «БАЛКОН») только тем, у кого есть балконная бронь."""
     print("DEBUG: Команда /resend получена!")
     admin_ids = {int(x) for x in os.getenv("ADMIN_IDS", "").split(",") if x}
     if update.effective_user.id not in admin_ids:
@@ -114,7 +106,6 @@ async def resend(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     async with Bot(os.environ["BOT_TOKEN"]) as bot:
         for uid, bookings in by_user.items():
             try:
-                # 1) удаляем старые сообщения с БАЛКОННЫМИ билетами (партерные не трогаем)
                 conn = sqlite3.connect(os.getenv("DB_PATH", "seats.db"))
                 conn.row_factory = sqlite3.Row
                 old = conn.execute(
@@ -128,10 +119,8 @@ async def resend(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         await bot.delete_message(chat_id=m["chat_id"],
                                                  message_id=m["message_id"])
                     except Exception as e:
-                        # чаще всего: сообщение старше 48 часов или уже удалено вручную
                         print(f"OLD DELETE SKIP user={uid}: {type(e).__name__}: {e}")
 
-                # 2) шлём новые балконные билеты с плашкой
                 for r in bookings:
                     section, row, seat = r["section"], r["row"], r["seat"]
                     data, name = await asyncio.to_thread(
@@ -159,18 +148,14 @@ async def resend(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                   "(бот не может писать тем, кто не начинал с ним чат)."
     await update.message.reply_text(report)
 
-
 async def fix29(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """Админ-команда: пересаживает тех, кто забронировал несуществующее место 29
-    в рядах 6–11, на свободные места, пишет каждому объяснение, удаляет старые
-    билеты и присылает новые."""
     print("DEBUG: Команда /fix29 получена!")
     admin_ids = {int(x) for x in os.getenv("ADMIN_IDS", "").split(",") if x}
     if update.effective_user.id not in admin_ids:
         await update.message.reply_text("Нет доступа")
         return
 
-    from main import (migrate_parter_29, delete_ticket_msgs, send_tickets)
+    from main import migrate_parter_29, delete_ticket_msgs, send_tickets
     from telegram import Bot
 
     try:
@@ -219,11 +204,7 @@ async def fix29(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         report += f"\nПроблемы у: {', '.join(map(str, set(fail)))}."
     await update.message.reply_text(report)
 
-
 async def fix12(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """Админ-команда: ряд 12 закреплён за жюри. Пересаживает всех с ряда 12
-    на ряд 14 (целиком), при нехватке — на зарезервированную часть ряда 15.
-    Пишет каждому объяснение, удаляет старые билеты и присылает новые."""
     print("DEBUG: Команда /fix12 получена!")
     admin_ids = {int(x) for x in os.getenv("ADMIN_IDS", "").split(",") if x}
     if update.effective_user.id not in admin_ids:
@@ -278,7 +259,6 @@ async def fix12(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         report += f"\nПроблемы у: {', '.join(map(str, set(fail)))}."
     await update.message.reply_text(report)
 
-
 async def export(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     print("DEBUG: Команда /export получена!")
     admin_ids = {int(x) for x in os.getenv("ADMIN_IDS", "").split(",") if x}
@@ -289,13 +269,52 @@ async def export(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     try:
         from main import PARTER_ROWS, GROUP_ROWS_PARTER, RESEAT_ROWS, BALCONY_ROWS
         from export_excel import build_xlsx
-
         buf = build_xlsx(PARTER_ROWS, {**GROUP_ROWS_PARTER, **RESEAT_ROWS}, BALCONY_ROWS)
         await update.message.reply_document(document=buf, filename="seats.xlsx")
     except Exception as e:
         print(f"DEBUG: ОШИБКА ПРИ ЭКСПОРТЕ: {type(e).__name__}: {e}")
         await update.message.reply_text(f"Ошибка экспорта: {e}")
 
+async def broadcast(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    print("DEBUG: Команда /broadcast получена!")
+    admin_ids = {int(x) for x in os.getenv("ADMIN_IDS", "").split(",") if x}
+    if update.effective_user.id not in admin_ids:
+        await update.message.reply_text("Нет доступа")
+        return
+
+    msg_text = (
+        "📢 **Важная информация по брони!**\n\n"
+        "Если вы на 100% уверены, что придёте на мероприятие — **оставьте свою бронь без изменений**.\n\n"
+        "Если вы поняли, что не сможете прийти, **огромная просьба отменить бронь** (зайдите в приложение «Выбрать места», выберите свои места и нажмите «Отменить бронь»).\n\n"
+        "Это поможет другим гостям занять освободившиеся места. Спасибо за понимание!"
+    )
+
+    from telegram import Bot
+    conn = sqlite3.connect(os.getenv("DB_PATH", "seats.db"))
+    rows = conn.execute("SELECT DISTINCT user_id FROM seats").fetchall()
+    conn.close()
+
+    if not rows:
+        await update.message.reply_text("Нет забронированных мест, рассылать некому.")
+        return
+
+    await update.message.reply_text(f"Начинаю рассылку для {len(rows)} пользователей...")
+
+    ok, fail = 0, []
+    async with Bot(os.environ["BOT_TOKEN"]) as bot:
+        for r in rows:
+            uid = r[0]
+            try:
+                await bot.send_message(chat_id=uid, text=msg_text, parse_mode="Markdown")
+                ok += 1
+            except Exception as e:
+                print(f"BROADCAST FAIL user={uid}: {type(e).__name__}: {e}")
+                fail.append(uid)
+
+    report = f"✅ Рассылка завершена. Успешно: {ok}."
+    if fail:
+        report += f"\n⚠️ Не удалось отправить {len(fail)} пользователям (возможно, они заблокировали бота)."
+    await update.message.reply_text(report)
 
 async def run_bot_async(token: str, webapp_url: str):
     global WEBAPP_URL
@@ -307,6 +326,7 @@ async def run_bot_async(token: str, webapp_url: str):
     app.add_handler(CommandHandler("resend", resend))
     app.add_handler(CommandHandler("fix29", fix29))
     app.add_handler(CommandHandler("fix12", fix12))
+    app.add_handler(CommandHandler("broadcast", broadcast))
     async with app:
         await app.start()
         await app.updater.start_polling()
