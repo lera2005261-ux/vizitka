@@ -107,6 +107,8 @@ const C_RED = "g-red", C_TEAL = "g-teal", C_ORANGE = "g-orange", C_BLUE = "g-blu
 
 function getParterGroupColor(row, seat) {
     row = parseInt(row);
+    if (row === 14) return C_GRAY;                 // ряд 14 — под пересадку с 12
+    if (row === 15 && seat >= 16) return C_GRAY;   // часть ряда 15 — под пересадку
     if ((row === 15 || row === 16) && seat >= 16 && seat <= 30) return C_RED;
     if (row === 17 && seat === 30) return C_RED;
     if (row === 17 && seat >= 16 && seat <= 29) return C_TEAL;
