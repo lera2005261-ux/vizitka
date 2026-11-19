@@ -149,16 +149,14 @@ def seat_is_bookable(section: str, row: str, seat: int) -> bool:
         return seat in BOOKABLE_BALCONY.get(row, set())
     if section == "parter":
         if row in GROUP_ROWS_PARTER or row in RESEAT_ROWS:
-            return False   # ряд закреплён (жюри / пересадка / группы)
+            return False
         if row not in PARTER_ROWS:
             return False
-        return seat in PARTER_ROWS[row]
-    return False
-    if row == "14":
+        # Для 14-го ряда разрешаем только место 25
+        if row == "14":
             return seat == 25
         return seat in PARTER_ROWS[row]
     return False
-
 # ----------------------------------------------------------------------------
 # Пересадка с ряда 12 (жюри) на ряды 14 и 15.
 # Запускается вручную админ-командой /fix12 (НЕ при старте приложения!)
