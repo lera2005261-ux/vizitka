@@ -30,6 +30,10 @@ VERIFY_INIT = os.getenv("VERIFY_INIT", "1").strip() != "0"
 
 TEST_MODE = not BOT_TOKEN
 
+# Часть ряда 15, зарезервированная под пересадку с ряда 12 (ряд 14 — целиком).
+# Если нужен другой блок — замените, например, на list(range(14, 0, -1))
+ROW15_RESEAT = list(range(30, 15, -1))   # места 30..16
+
 
 def ticket_caption(section: str, row: str, seat: int) -> str:
     """Подпись к билету: для балкона помечаем секцию."""
@@ -56,13 +60,13 @@ PARTER_ROWS = {
     "9":  list(range(28, 0, -1)),
     "10": list(range(28, 0, -1)),
     "11": list(range(28, 0, -1)),
-    "12": list(range(26, 0, -1)),   # ряд 12 открыт для бронирования (26 мест)
 }
 
+# Ряды, недоступные для обычной брони
 GROUP_ROWS_PARTER = {
-    "13": list(range(30, 0, -1)),   # 30 мест
-    "14": list(range(30, 0, -1)),   # 30 мест
-    "15": list(range(30, 15, -1)) + list(range(15, 0, -1)),   # проход между 16 и 14
+    "12": list(range(26, 0, -1)),   # ряд 12 — жюри (26 мест)
+    "13": list(range(30, 0, -1)),   # группы
+    "15": list(range(14, 0, -1)),   # правая часть ряда 15 — группы (места 16–30 — под пересадку)
     "16": list(range(30, 15, -1)) + list(range(15, 0, -1)),
     "17": list(range(30, 15, -1)) + list(range(15, 0, -1)),
     "18": list(range(30, 15, -1)) + list(range(15, 0, -1)),
@@ -71,6 +75,13 @@ GROUP_ROWS_PARTER = {
     "21": list(range(30, 15, -1)) + list(range(15, 0, -1)),
     "22": list(range(30, 15, -1)) + list(range(15, 0, -1)),
     "23": list(range(26, 0, -1)),   # весь ряд — группы: 1–4 салатовые, 5–24 зелёные, 25–26 синие
+}
+
+# Ряды под пересадку с ряда 12: бронируются только через /fix12,
+# на схеме занятые места показываются как занятые, свободные — как «не для брони»
+RESEAT_ROWS = {
+    "14": list(range(30, 0, -1)),   # весь ряд 14 — под пересадку с ряда 12
+    "15": ROW15_RESEAT,             # часть ряда 15 — резерв под пересадку
 }
 
 BALCONY_ROWS = {
@@ -136,51 +147,53 @@ def seat_is_bookable(section: str, row: str, seat: int) -> bool:
     if section == "balcony":
         return seat in BOOKABLE_BALCONY.get(row, set())
     if section == "parter":
-        if row in GROUP_ROWS_PARTER and seat in GROUP_ROWS_PARTER[row]:
-            return False   # это конкретное место закреплено за группой
+        if row in GROUP_ROWS_PARTER or row in RESEAT_ROWS:
+            return False   # ряд закреплён (жюри / пересадка / группы)
         if row not in PARTER_ROWS:
             return False
         return seat in PARTER_ROWS[row]
     return False
 
 # ----------------------------------------------------------------------------
-# Миграция: места 29 в рядах 6–11 не существуют — пересаживаем бронировавших.
-# Запускается вручную админ-командой /fix29 (НЕ при старте приложения!)
+# Пересадка с ряда 12 (жюри) на ряды 14 и 15.
+# Запускается вручную админ-командой /fix12 (НЕ при старте приложения!)
 # ----------------------------------------------------------------------------
-def _find_free_parter_seat(conn: sqlite3.Connection, orig_row: str, orig_seat: int):
-    """Ищет свободное место: сначала тот же ряд (максимальный номер —
-    ближе к прежнему месту), затем соседние ряды."""
-    rows_order = sorted(PARTER_ROWS.keys(), key=lambda r: abs(int(r) - int(orig_row)))
-    for row in rows_order:
-        for s in PARTER_ROWS[row]:  # списки уже идут от большего к меньшему
-            if row == orig_row and s == orig_seat:
-                continue
-            taken = conn.execute(
-                "SELECT 1 FROM seats WHERE section='parter' AND row=? AND seat=?",
-                (row, s),
-            ).fetchone()
-            if not taken:
+def _seat_taken(conn: sqlite3.Connection, row: str, seat: int) -> bool:
+    return conn.execute(
+        "SELECT 1 FROM seats WHERE section='parter' AND row=? AND seat=?",
+        (row, seat),
+    ).fetchone() is not None
+
+
+def _find_reseat_spot(conn: sqlite3.Connection, orig_seat: int):
+    """Сначала пытается сохранить прежний номер места в ряду 14,
+    затем — любое свободное в 14, затем то же/любое в резерве ряда 15."""
+    for row, seats_list in (("14", RESEAT_ROWS["14"]), ("15", RESEAT_ROWS["15"])):
+        if orig_seat in seats_list and not _seat_taken(conn, row, orig_seat):
+            return row, orig_seat
+        for s in seats_list:
+            if s != orig_seat and not _seat_taken(conn, row, s):
                 return row, s
     return None
 
 
-def migrate_parter_29() -> list:
-    """Пересаживает всех, кто забронировал место 29 в партере рядов 6–11.
-    Возвращает список пересадок для рассылки новых билетов."""
+def migrate_row12() -> list:
+    """Пересаживает всех, у кого бронь на ряду 12 (ряд закреплён за жюри).
+    Ряд 14 — целиком, остаток — на зарезервированную часть ряда 15."""
     moved = []
     with db() as conn:
         conn.execute("BEGIN IMMEDIATE")
         try:
             rows = conn.execute(
                 "SELECT user_id, section, row, seat, fio, course, grp, ts FROM seats "
-                "WHERE section='parter' AND seat=29 "
-                "AND CAST(row AS INTEGER) IN (6,7,8,9,10,11)"
+                "WHERE section='parter' AND CAST(row AS INTEGER)=12 "
+                "ORDER BY CAST(seat AS INTEGER)"
             ).fetchall()
             for r in rows:
-                spot = _find_free_parter_seat(conn, r["row"], r["seat"])
+                spot = _find_reseat_spot(conn, r["seat"])
                 if spot is None:
-                    print(f"SEAT 29 MIGRATION: не нашлось свободного места для "
-                          f"user={r['user_id']} (ряд {r['row']}) — бронь оставлена как есть")
+                    print(f"ROW12 MIGRATION: нет свободного места для "
+                          f"user={r['user_id']} (место {r['seat']}) — бронь оставлена как есть")
                     continue
                 new_row, new_seat = spot
                 conn.execute(
@@ -194,6 +207,7 @@ def migrate_parter_29() -> list:
                      r["course"], r["grp"], r["ts"]),
                 )
                 moved.append({"user_id": r["user_id"], "old_row": r["row"],
+                              "old_seat": r["seat"],
                               "new_row": new_row, "new_seat": new_seat})
             conn.execute("COMMIT")
         except Exception:
@@ -357,6 +371,15 @@ def api_state(request: Request):
         for s in seats_list:
             seats.append({"section": "parter", "row": row, "seat": s, "status": "group"})
 
+    for row, seats_list in RESEAT_ROWS.items():
+        for s in seats_list:
+            key = ("parter", row, s)
+            if key in busy:
+                seats.append({"section": "parter", "row": row, "seat": s,
+                              "status": "mine" if busy[key] == uid else "busy"})
+            else:
+                seats.append({"section": "parter", "row": row, "seat": s, "status": "group"})
+
     for row, seats_list in BALCONY_ROWS.items():
         bookable = BOOKABLE_BALCONY.get(row, set())
         for s in seats_list:
@@ -492,7 +515,7 @@ def api_export(key: str = Query(...)):
     if key != ADMIN_KEY:
         raise HTTPException(403, "Неверный ключ")
     from export_excel import build_xlsx
-    buf = build_xlsx(PARTER_ROWS, GROUP_ROWS_PARTER, BALCONY_ROWS)
+    buf = build_xlsx(PARTER_ROWS, {**GROUP_ROWS_PARTER, **RESEAT_ROWS}, BALCONY_ROWS)
     return StreamingResponse(
         buf,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
