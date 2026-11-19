@@ -367,8 +367,6 @@ def api_book(request: Request, b: BookIn, background: BackgroundTasks):
     with db() as conn:
         cnt = conn.execute("SELECT COUNT(*) c FROM seats WHERE user_id=?", (uid,)).fetchone()["c"]
     if cnt + len(b.seats) > MAX_SEATS: raise HTTPException(400, f"Не больше {MAX_SEATS} мест")
-    if b.section == "balcony" and not b.ack:
-        raise HTTPException(400, "Подтвердите условие: возможна пересадка с балкона в партер")
     for s in b.seats:
         if not seat_is_bookable(b.section, b.row, s):
             raise HTTPException(400, f"Место {s} закреплено за группой")
