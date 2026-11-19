@@ -148,14 +148,10 @@ def seat_is_bookable(section: str, row: str, seat: int) -> bool:
     if section == "balcony":
         return seat in BOOKABLE_BALCONY.get(row, set())
     if section == "parter":
-        # РАЗРЕШАЕМ 25-е место на 14-м ряду ДО всех проверок на группы
-        if row == "14" and seat == 25:
-            return True
-            
-        # Все остальные места 14-го ряда запрещаем
+        # В 14-м ряду разрешаем ТОЛЬКО место 25
         if row == "14":
-            return False
-
+            return seat == 25
+            
         if row in GROUP_ROWS_PARTER or row in RESEAT_ROWS:
             return False
         if row not in PARTER_ROWS:
