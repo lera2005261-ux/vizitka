@@ -220,6 +220,65 @@ async def fix29(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(report)
 
 
+async def fix12(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Админ-команда: ряд 12 закреплён за жюри. Пересаживает всех с ряда 12
+    на ряд 14 (целиком), при нехватке — на зарезервированную часть ряда 15.
+    Пишет каждому объяснение, удаляет старые билеты и присылает новые."""
+    print("DEBUG: Команда /fix12 получена!")
+    admin_ids = {int(x) for x in os.getenv("ADMIN_IDS", "").split(",") if x}
+    if update.effective_user.id not in admin_ids:
+        await update.message.reply_text("Нет доступа")
+        return
+
+    from main import migrate_row12, delete_ticket_msgs, send_tickets
+    from telegram import Bot
+
+    try:
+        moved = migrate_row12()
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        await update.message.reply_text(f"Ошибка пересадки: {type(e).__name__}: {e}")
+        return
+
+    if not moved:
+        await update.message.reply_text("Броней на ряду 12 не найдено.")
+        return
+
+    await update.message.reply_text(f"Найдено пересадок: {len(moved)}. Рассылаю…")
+
+    ok, fail = 0, []
+    async with Bot(os.environ["BOT_TOKEN"]) as bot:
+        for m in moved:
+            try:
+                await bot.send_message(
+                    m["user_id"],
+                    "⚠️ Ряд 12 закреплён за жюри, поэтому ваше место "
+                    f"(ряд 12, место {m['old_seat']}) больше недоступно.\n\n"
+                    f"Вам автоматически выделено новое место: "
+                    f"ряд {m['new_row']}, место {m['new_seat']}.\n"
+                    "Старый билет недействителен — сейчас пришлём новый. "
+                    "Приносим извинения за неудобства!",
+                )
+            except Exception as e:
+                print(f"FIX12 NOTICE SKIP user={m['user_id']}: {type(e).__name__}: {e}")
+            try:
+                await delete_ticket_msgs(m["user_id"], "parter", m["old_row"], [m["old_seat"]])
+            except Exception as e:
+                print(f"FIX12 DELETE FAIL user={m['user_id']}: {type(e).__name__}: {e}")
+            try:
+                await send_tickets(m["user_id"], "parter", m["new_row"], [m["new_seat"]])
+                ok += 1
+            except Exception as e:
+                print(f"FIX12 SEND FAIL user={m['user_id']}: {type(e).__name__}: {e}")
+                fail.append(m["user_id"])
+
+    report = f"Готово: пересажено и уведомлено {ok}."
+    if fail:
+        report += f"\nПроблемы у: {', '.join(map(str, set(fail)))}."
+    await update.message.reply_text(report)
+
+
 async def export(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     print("DEBUG: Команда /export получена!")
     admin_ids = {int(x) for x in os.getenv("ADMIN_IDS", "").split(",") if x}
@@ -228,10 +287,10 @@ async def export(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
 
     try:
-        from main import PARTER_ROWS, GROUP_ROWS_PARTER, BALCONY_ROWS
+        from main import PARTER_ROWS, GROUP_ROWS_PARTER, RESEAT_ROWS, BALCONY_ROWS
         from export_excel import build_xlsx
 
-        buf = build_xlsx(PARTER_ROWS, GROUP_ROWS_PARTER, BALCONY_ROWS)
+        buf = build_xlsx(PARTER_ROWS, {**GROUP_ROWS_PARTER, **RESEAT_ROWS}, BALCONY_ROWS)
         await update.message.reply_document(document=buf, filename="seats.xlsx")
     except Exception as e:
         print(f"DEBUG: ОШИБКА ПРИ ЭКСПОРТЕ: {type(e).__name__}: {e}")
@@ -247,6 +306,7 @@ async def run_bot_async(token: str, webapp_url: str):
     app.add_handler(CommandHandler("export", export))
     app.add_handler(CommandHandler("resend", resend))
     app.add_handler(CommandHandler("fix29", fix29))
+    app.add_handler(CommandHandler("fix12", fix12))
     async with app:
         await app.start()
         await app.updater.start_polling()
