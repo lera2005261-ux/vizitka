@@ -118,8 +118,11 @@ def init_db() -> None:
         """)
 
 BOOKABLE_BALCONY = {
-    "2": set(range(26, 30)),
-    "3": set(range(13, 19)),
+    "2": set(range(26, 30)),             # 26–29
+    "3": set(range(6, 30)) | {1, 2},     # 3–5 заняты группами
+    "4": set(range(1, 30)),
+    "5": set(range(1, 29)),
+    "6": set(range(1, 30)),
 }
 
 def seat_is_bookable(section: str, row: str, seat: int) -> bool:
