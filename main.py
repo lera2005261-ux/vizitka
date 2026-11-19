@@ -33,8 +33,10 @@ ROW15_RESEAT = list(range(30, 15, -1))   # места 30..16 для переса
 
 def ticket_caption(section: str, row: str, seat: int) -> str:
     place = f"Балкон, ряд {row}, место {seat}" if section == "balcony" else f"Ряд {row}, место {seat}"
+    warn = ("\n⚠️ Балкон: если в партере будет мало гостей, организаторы могут пересадить вас в партер. "
+            "Тогда мы пришлём уведомление и новый билет.\n") if section == "balcony" else ""
     return (
-        f"🎟 {place}\n"
+        f"🎟 {place}\n{warn}"
         "Сверка на входе по списку: данные в брони (ФИО, курс, группа) "
         "должны быть корректными — иначе не пропустят.\n"
         "Печать по желанию: в масштабе 100% (без «по размеру страницы»)."
@@ -365,7 +367,8 @@ def api_book(request: Request, b: BookIn, background: BackgroundTasks):
     with db() as conn:
         cnt = conn.execute("SELECT COUNT(*) c FROM seats WHERE user_id=?", (uid,)).fetchone()["c"]
     if cnt + len(b.seats) > MAX_SEATS: raise HTTPException(400, f"Не больше {MAX_SEATS} мест")
-
+    if b.section == "balcony" and not b.ack:
+        raise HTTPException(400, "Подтвердите условие: возможна пересадка с балкона в партер")
     for s in b.seats:
         if not seat_is_bookable(b.section, b.row, s):
             raise HTTPException(400, f"Место {s} закреплено за группой")
