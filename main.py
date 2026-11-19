@@ -60,6 +60,7 @@ PARTER_ROWS = {
     "9":  list(range(28, 0, -1)),
     "10": list(range(28, 0, -1)),
     "11": list(range(28, 0, -1)),
+    "14": list(range(28, 0, -1)),
 }
 
 # Ряды, недоступные для обычной брони
@@ -151,6 +152,10 @@ def seat_is_bookable(section: str, row: str, seat: int) -> bool:
             return False   # ряд закреплён (жюри / пересадка / группы)
         if row not in PARTER_ROWS:
             return False
+        return seat in PARTER_ROWS[row]
+    return False
+    if row == "14":
+            return seat == 25
         return seat in PARTER_ROWS[row]
     return False
 
